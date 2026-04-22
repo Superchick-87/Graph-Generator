@@ -6,7 +6,7 @@ const ChartModule = {
     "#6f9ed4",
     "#e78868",
     "#79b2a1",
-    "#000000",
+    "#fbbf24",
   ],
   selectedText: null,
   persistentStyles: {},
@@ -43,55 +43,18 @@ const ChartModule = {
     svg.selectAll("*").remove();
 
     const width = 800,
-      height = 500;
-    const margin = { top: 70, right: 40, bottom: 60, left: 100 };
+      height = 500,
+      margin = { top: 70, right: 40, bottom: 60, left: 100 };
     const innerW = width - margin.left - margin.right,
       innerH = height - margin.top - margin.bottom;
-
     const g = svg
       .append("g")
       .attr("transform", `translate(${margin.left},${margin.top})`);
 
-    const isHoriz = config.type === "horizontalBar";
-    const isBar = config.type === "bar" || isHoriz;
-    const modeKey = isBar ? (isHoriz ? "hBar" : "vBar") : "line"; // Clé pour la mémoire de position
-
-    const xLabels = data.map((d, i) => (mapping.x ? d[mapping.x] : i + 1));
-    const maxY = d3.max(data, (d) => d3.max(mapping.yKeys, (k) => d[k] || 0));
-
-    let xScale, yScale, xSub, ySub;
-    if (isHoriz) {
-      yScale = d3.scaleBand().range([0, innerH]).padding(0.3).domain(xLabels);
-      xScale = d3
-        .scaleLinear()
-        .range([0, innerW])
-        .domain([0, (maxY || 10) * 1.15])
-        .nice();
-      ySub = d3
-        .scaleBand()
-        .domain(mapping.yKeys)
-        .range([0, yScale.bandwidth()])
-        .padding(0.05);
-    } else {
-      xScale = d3.scaleBand().range([0, innerW]).padding(0.3).domain(xLabels);
-      yScale = d3
-        .scaleLinear()
-        .range([innerH, 0])
-        .domain([0, (maxY || 10) * 1.15])
-        .nice();
-      xSub = isBar
-        ? d3
-            .scaleBand()
-            .domain(mapping.yKeys)
-            .range([0, xScale.bandwidth()])
-            .padding(0.05)
-        : null;
-    }
-
-    g.append("g")
-      .attr("transform", `translate(0,${innerH})`)
-      .call(d3.axisBottom(xScale));
-    g.append("g").call(d3.axisLeft(yScale));
+    const isHoriz = config.type === "horizontalBar",
+      isPie = config.type === "pie",
+      isBar = config.type === "bar" || isHoriz;
+    const modeKey = isPie ? "pie" : isHoriz ? "hBar" : isBar ? "vBar" : "line";
 
     const drag = d3
       .drag()
@@ -104,12 +67,12 @@ const ChartModule = {
           ox = +node.attr("data-origin-x"),
           oy = +node.attr("data-origin-y");
         node.attr("transform", `translate(${event.x},${event.y})`);
-
-        // On enregistre l'offset spécifiquement pour le mode actuel (line, vBar ou hBar)
         if (!this.persistentStyles[id]) this.persistentStyles[id] = {};
         if (!this.persistentStyles[id].offsets)
           this.persistentStyles[id].offsets = {};
-        this.persistentStyles[id].offsets[modeKey] = {
+        const key =
+          id === "main-title" || id.startsWith("leg") ? "universal" : modeKey;
+        this.persistentStyles[id].offsets[key] = {
           x: event.x - ox,
           y: event.y - oy,
         };
@@ -118,104 +81,213 @@ const ChartModule = {
         if (window.appInstance) window.appInstance.saveState();
       });
 
-    mapping.yKeys.forEach((key, index) => {
-      const color = this.colors[index % this.colors.length];
-      if (!isBar) {
-        const lineGen = d3
-          .line()
-          .x((d, i) => xScale(xLabels[i]) + xScale.bandwidth() / 2)
-          .y((d) => yScale(d[key] || 0));
-        g.append("path")
-          .datum(data)
-          .attr("fill", "none")
-          .attr("stroke", color)
-          .attr("stroke-width", 3)
-          .attr("d", lineGen);
-      } else if (isHoriz) {
-        g.selectAll(`.bar-${index}`)
-          .data(data)
-          .enter()
-          .append("rect")
-          .attr("y", (d, i) => yScale(xLabels[i]) + ySub(key))
-          .attr("x", 0)
-          .attr("height", ySub.bandwidth())
-          .attr("width", (d) => xScale(d[key] || 0))
-          .attr("fill", color)
-          .attr("opacity", 0.7);
-      } else {
-        g.selectAll(`.bar-${index}`)
-          .data(data)
-          .enter()
-          .append("rect")
-          .attr("x", (d, i) => xScale(xLabels[i]) + xSub(key))
-          .attr("y", (d) => yScale(d[key] || 0))
-          .attr("width", xSub.bandwidth())
-          .attr("height", (d) => innerH - yScale(d[key] || 0))
-          .attr("fill", color)
-          .attr("opacity", 0.7);
-      }
+    if (isPie) {
+      const radius = Math.min(innerW, innerH) / 2;
+      const pieG = g
+        .append("g")
+        .attr("transform", `translate(${innerW / 2},${innerH / 2})`);
+      const pieData = mapping.yKeys.map((key) => ({
+        key,
+        value: data[0][key],
+      }));
+      const pie = d3.pie().value((d) => d.value);
+      const arc = d3.arc().innerRadius(0).outerRadius(radius);
+      const labelArc = d3
+        .arc()
+        .innerRadius(radius * 0.7)
+        .outerRadius(radius * 0.7);
 
-      data.forEach((d, i) => {
-        let cx, cy;
-        if (isHoriz) {
-          cx = xScale(d[key] || 0);
-          cy = yScale(xLabels[i]) + ySub(key) + ySub.bandwidth() / 2;
-        } else {
-          cx =
-            xScale(xLabels[i]) +
-            (isBar ? xSub(key) + xSub.bandwidth() / 2 : xScale.bandwidth() / 2);
-          cy = yScale(d[key] || 0);
-        }
+      const arcs = pieG
+        .selectAll(".arc")
+        .data(pie(pieData))
+        .enter()
+        .append("g")
+        .attr("class", "arc");
+      arcs
+        .append("path")
+        .attr("d", arc)
+        .attr("fill", (d, i) => this.colors[i % this.colors.length])
+        .attr("stroke", "white")
+        .style("stroke-width", "2px")
+        .attr("opacity", 0.8);
 
-        const id = `p-${index}-${i}`,
-          style = this.persistentStyles[id] || {};
+      arcs.each((d, i) => {
+        const center = labelArc.centroid(d);
+        const idVal = `p-${i}-0-val`,
+          idTxt = `p-${i}-0-txt`;
+        const sVal = this.persistentStyles[idVal] || {},
+          sTxt = this.persistentStyles[idTxt] || {};
+        const offVal =
+          sVal.offsets && sVal.offsets.pie
+            ? sVal.offsets.pie
+            : { x: 0, y: -10 };
+        const offTxt =
+          sTxt.offsets && sTxt.offsets.pie ? sTxt.offsets.pie : { x: 0, y: 10 };
 
-        // RÉCUPÉRATION DE L'OFFSET PAR MODE
-        // On cherche d'abord si un offset existe pour ce mode précis
-        let off =
-          style.offsets && style.offsets[modeKey]
-            ? style.offsets[modeKey]
-            : null;
-
-        // Si aucun offset manuel, on met la position par défaut selon le mode
-        if (!off) {
-          off = isHoriz ? { x: 25, y: 0 } : { x: 0, y: -25 };
-        }
-
-        if (!style.deleted) {
+        if (!sVal.deleted) {
+          const valLabel = sVal.text || d.data.value;
           this.addInteractiveText(
-            g,
-            cx + off.x,
-            cy + off.y,
-            d[key],
+            pieG,
+            center[0] + offVal.x,
+            center[1] + offVal.y,
+            valLabel,
             "font-bold",
             true,
             drag,
             null,
-            style.fill || color,
-            index,
-            id,
+            sVal.fill || this.colors[i % this.colors.length],
+            i,
+            idVal,
           );
-          d3.select(`[data-id='${id}']`)
-            .attr("data-origin-x", cx)
-            .attr("data-origin-y", cy);
+          d3.select(`[data-id='${idVal}']`)
+            .attr("data-origin-x", center[0])
+            .attr("data-origin-y", center[1]);
+        }
+        if (!config.showPieLegend && !sTxt.deleted) {
+          const txtLabel = sTxt.text || d.data.key;
+          this.addInteractiveText(
+            pieG,
+            center[0] + offTxt.x,
+            center[1] + offTxt.y,
+            txtLabel,
+            "text-[10px]",
+            true,
+            drag,
+            null,
+            sTxt.fill || this.colors[i % this.colors.length],
+            i,
+            idTxt,
+          );
+          d3.select(`[data-id='${idTxt}']`)
+            .attr("data-origin-x", center[0])
+            .attr("data-origin-y", center[1]);
         }
       });
-    });
+    } else {
+      const xLabels = data.map((d, i) => (mapping.x ? d[mapping.x] : i + 1)),
+        maxY = d3.max(data, (d) => d3.max(mapping.yKeys, (k) => d[k] || 0));
+      let xScale, yScale, xSub, ySub;
+      if (isHoriz) {
+        yScale = d3.scaleBand().range([0, innerH]).padding(0.3).domain(xLabels);
+        xScale = d3
+          .scaleLinear()
+          .range([0, innerW])
+          .domain([0, (maxY || 10) * 1.15])
+          .nice();
+        ySub = d3
+          .scaleBand()
+          .domain(mapping.yKeys)
+          .range([0, yScale.bandwidth()])
+          .padding(0.05);
+      } else {
+        xScale = d3.scaleBand().range([0, innerW]).padding(0.3).domain(xLabels);
+        yScale = d3
+          .scaleLinear()
+          .range([innerH, 0])
+          .domain([0, (maxY || 10) * 1.15])
+          .nice();
+        xSub = isBar
+          ? d3
+              .scaleBand()
+              .domain(mapping.yKeys)
+              .range([0, xScale.bandwidth()])
+              .padding(0.05)
+          : null;
+      }
+      g.append("g")
+        .attr("transform", `translate(0,${innerH})`)
+        .call(d3.axisBottom(xScale));
+      g.append("g").call(d3.axisLeft(yScale));
 
-    // TITRE
-    const tStyle = this.persistentStyles["main-title"] || {};
-    // Le titre garde un offset universel car sa position ne dépend pas du type de graph
-    const tOff =
-      tStyle.offsets && tStyle.offsets.universal
-        ? tStyle.offsets.universal
-        : tStyle.offset || { x: 0, y: 0 };
+      mapping.yKeys.forEach((key, index) => {
+        const color = this.colors[index % this.colors.length];
+        if (!isBar) {
+          const lineGen = d3
+            .line()
+            .x((d, i) => xScale(xLabels[i]) + xScale.bandwidth() / 2)
+            .y((d) => yScale(d[key] || 0));
+          g.append("path")
+            .datum(data)
+            .attr("fill", "none")
+            .attr("stroke", color)
+            .attr("stroke-width", 3)
+            .attr("d", lineGen);
+        } else if (isHoriz) {
+          g.selectAll(`.bar-${index}`)
+            .data(data)
+            .enter()
+            .append("rect")
+            .attr("y", (d, i) => yScale(xLabels[i]) + ySub(key))
+            .attr("x", 0)
+            .attr("height", ySub.bandwidth())
+            .attr("width", (d) => xScale(d[key] || 0))
+            .attr("fill", color)
+            .attr("opacity", 0.7);
+        } else {
+          g.selectAll(`.bar-${index}`)
+            .data(data)
+            .enter()
+            .append("rect")
+            .attr("x", (d, i) => xScale(xLabels[i]) + xSub(key))
+            .attr("y", (d) => yScale(d[key] || 0))
+            .attr("width", xSub.bandwidth())
+            .attr("height", (d) => innerH - yScale(d[key] || 0))
+            .attr("fill", color)
+            .attr("opacity", 0.7);
+        }
+        data.forEach((d, i) => {
+          let cx, cy;
+          if (isHoriz) {
+            cx = xScale(d[key] || 0);
+            cy = yScale(xLabels[i]) + ySub(key) + ySub.bandwidth() / 2;
+          } else {
+            cx =
+              xScale(xLabels[i]) +
+              (isBar
+                ? xSub(key) + xSub.bandwidth() / 2
+                : xScale.bandwidth() / 2);
+            cy = yScale(d[key] || 0);
+          }
+          const id = `p-${index}-${i}-val`,
+            style = this.persistentStyles[id] || {};
+          let off =
+            style.offsets && style.offsets[modeKey]
+              ? style.offsets[modeKey]
+              : isHoriz
+                ? { x: 25, y: 0 }
+                : { x: 0, y: -25 };
+          if (!style.deleted) {
+            this.addInteractiveText(
+              g,
+              cx + off.x,
+              cy + off.y,
+              style.text || d[key],
+              "font-bold",
+              true,
+              drag,
+              null,
+              style.fill || color,
+              index,
+              id,
+            );
+            d3.select(`[data-id='${id}']`)
+              .attr("data-origin-x", cx)
+              .attr("data-origin-y", cy);
+          }
+        });
+      });
+    }
 
+    const tStyle = this.persistentStyles["main-title"] || {},
+      tOff =
+        tStyle.offsets && tStyle.offsets.universal
+          ? tStyle.offsets.universal
+          : { x: 0, y: 0 };
     this.addInteractiveText(
       svg,
       400 + tOff.x,
       30 + tOff.y,
-      config.title || "Titre",
+      tStyle.text || config.title || "Titre",
       "text-xl font-bold",
       true,
       drag,
@@ -228,30 +300,58 @@ const ChartModule = {
       .select("[data-id='main-title']")
       .attr("data-origin-x", 400)
       .attr("data-origin-y", 30);
-
-    this.renderLegend(svg, width, margin, mapping, drag);
+    this.renderLegend(svg, width, margin, mapping, drag, config);
     this.applyAllStyles();
   },
 
-  // Modification pour le titre qui doit rester au même endroit
-  storeStyle(id, prop, val) {
-    if (!this.persistentStyles[id]) this.persistentStyles[id] = {};
-    if (prop === "offset") {
-      if (!this.persistentStyles[id].offsets)
-        this.persistentStyles[id].offsets = {};
-      // Si c'est le titre, on utilise une clé universelle
-      const key =
-        id === "main-title"
-          ? "universal"
-          : this.lastRenderedType === "horizontalBar"
-            ? "hBar"
-            : this.lastRenderedType === "bar"
-              ? "vBar"
-              : "line";
-      this.persistentStyles[id].offsets[key] = val;
-    } else {
-      this.persistentStyles[id][prop] = val;
+  renderLegend(svg, width, margin, mapping, drag, config) {
+    if (config.type === "pie" && !config.showPieLegend) {
+      svg.selectAll(".legend-container").remove();
+      return;
     }
+    const lx = this.legendPos.x || width - 150,
+      ly = this.legendPos.y || 60;
+    const leg = svg
+      .append("g")
+      .attr("class", "legend-container")
+      .attr("transform", `translate(${lx}, ${ly})`)
+      .call(
+        d3.drag().on("drag", (event) => {
+          this.legendPos = { x: event.x, y: event.y };
+          d3.select(".legend-container").attr(
+            "transform",
+            `translate(${event.x},${event.y})`,
+          );
+        }),
+      );
+    mapping.yKeys.forEach((key, index) => {
+      const item = leg
+          .append("g")
+          .attr("transform", `translate(0, ${index * 25})`),
+        color = this.colors[index % this.colors.length],
+        id = `leg-${index}`,
+        s = this.persistentStyles[id] || {};
+      item
+        .append("rect")
+        .attr("width", 12)
+        .attr("height", 12)
+        .attr("fill", color);
+      const off =
+        s.offsets && s.offsets.universal ? s.offsets.universal : { x: 0, y: 0 };
+      this.addInteractiveText(
+        item,
+        20 + off.x,
+        10 + off.y,
+        s.text || key,
+        "font-bold",
+        false,
+        drag,
+        null,
+        "transparent",
+        id,
+        id,
+      );
+    });
   },
 
   addInteractiveText(
@@ -279,16 +379,12 @@ const ChartModule = {
       .attr("rx", 4)
       .attr("ry", 4)
       .attr("fill", bgColor || "transparent");
-    const label =
-      this.persistentStyles[uniqueId] && this.persistentStyles[uniqueId].text
-        ? this.persistentStyles[uniqueId].text
-        : text;
     group
       .append("text")
       .attr("text-anchor", centered ? "middle" : "start")
       .attr("class", classes)
       .style("font-size", "12px")
-      .text(label);
+      .text(text);
     this.updateCartouche(group);
     group
       .on("click", (e) => {
@@ -311,14 +407,30 @@ const ChartModule = {
       .attr("y", bbox.y - p)
       .attr("width", bbox.width + p * 2)
       .attr("height", bbox.height + p * 2);
-    const f = rect.attr("fill"),
-      s = rect.attr("stroke");
-    text.attr(
-      "fill",
-      f === "transparent" || (s && s !== "none")
-        ? "#000"
-        : this.getContrastColor(f),
-    );
+    const f = rect.attr("fill");
+    text.attr("fill", f === "transparent" ? "#000" : this.getContrastColor(f));
+  },
+
+  storeStyle(id, prop, val) {
+    if (!this.persistentStyles[id]) this.persistentStyles[id] = {};
+    if (prop === "offset") {
+      if (!this.persistentStyles[id].offsets)
+        this.persistentStyles[id].offsets = {};
+      const type = window.appInstance.config.type;
+      const key =
+        id === "main-title" || id.startsWith("leg")
+          ? "universal"
+          : type === "horizontalBar"
+            ? "hBar"
+            : type === "pie"
+              ? "pie"
+              : type === "bar"
+                ? "vBar"
+                : "line";
+      this.persistentStyles[id].offsets[key] = val;
+    } else {
+      this.persistentStyles[id][prop] = val;
+    }
   },
 
   applyAllStyles() {
@@ -335,7 +447,6 @@ const ChartModule = {
       if (s.fontSize) g.select("text").style("font-size", s.fontSize);
       if (s.fontWeight) g.select("text").style("font-weight", s.fontWeight);
       if (s.fontStyle) g.select("text").style("font-style", s.fontStyle);
-      if (s.text) g.select("text").text(s.text);
       this.updateCartouche(g);
     });
   },
@@ -455,56 +566,5 @@ const ChartModule = {
       cb(d3.select(this));
     });
     if (window.appInstance) window.appInstance.saveState();
-  },
-
-  renderLegend(svg, width, margin, mapping, drag) {
-    const lx = this.legendPos.x || width - 150,
-      ly = this.legendPos.y || 60;
-    const leg = svg
-      .append("g")
-      .attr("class", "legend-container")
-      .attr("transform", `translate(${lx}, ${ly})`)
-      .call(
-        d3.drag().on("drag", (event) => {
-          this.legendPos = { x: event.x, y: event.y };
-          d3.select(".legend-container").attr(
-            "transform",
-            `translate(${event.x},${event.y})`,
-          );
-        }),
-      );
-    mapping.yKeys.forEach((key, index) => {
-      const item = leg
-          .append("g")
-          .attr("transform", `translate(0, ${index * 25})`),
-        color = this.colors[index % this.colors.length],
-        id = `leg-${index}`;
-      item
-        .append("rect")
-        .attr("width", 12)
-        .attr("height", 12)
-        .attr("fill", color);
-
-      const s = this.persistentStyles[id] || {};
-      // Pour la légende, on utilise aussi un offset universel (ne dépend pas du type de graph)
-      const off =
-        s.offsets && s.offsets.universal
-          ? s.offsets.universal
-          : s.offset || { x: 0, y: 0 };
-
-      this.addInteractiveText(
-        item,
-        20 + off.x,
-        10 + off.y,
-        key,
-        "font-bold",
-        false,
-        drag,
-        null,
-        "transparent",
-        id,
-        id,
-      );
-    });
   },
 };

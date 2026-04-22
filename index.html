@@ -29,16 +29,42 @@
       <div class="grid grid-cols-12 gap-8">
         <aside class="col-span-4 space-y-6">
           <section
+            class="bg-white p-4 rounded-lg shadow-sm border-2 border-blue-500 space-y-3"
+          >
+            <h2 class="font-bold text-blue-700">
+              1. Choisir le type de graphique
+            </h2>
+            <div class="grid grid-cols-2 gap-2">
+              <button
+                v-for="t in types"
+                :key="t.id"
+                @click="config.type = t.id"
+                :class="['p-2 rounded border text-xs font-bold transition-all', config.type === t.id ? 'bg-blue-600 text-white border-blue-600 shadow-md' : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300']"
+              >
+                {{ t.label }}
+              </button>
+            </div>
+          </section>
+
+          <section
             class="bg-white p-4 rounded-lg shadow-sm border border-slate-200"
           >
-            <h2 class="font-semibold mb-3">1. Données (Copier-Coller)</h2>
+            <h2 class="font-semibold mb-3">2. Importer les données</h2>
+            <div
+              class="bg-blue-50 p-2 rounded mb-3 text-[10px] text-blue-800 leading-tight"
+            >
+              <strong>Format attendu :</strong> {{ currentTypeHint }}
+            </div>
             <textarea
               v-model="rawInput"
-              placeholder="Collez vos cellules Excel ici..."
-              class="w-full h-64 border p-2 text-xs font-mono rounded bg-slate-50 focus:bg-white transition-all outline-none focus:ring-2 focus:ring-blue-500"
+              :placeholder="currentPlaceholder"
+              class="w-full h-48 border p-2 text-xs font-mono rounded bg-slate-50 focus:bg-white transition-all outline-none"
             ></textarea>
 
-            <div v-if="headers.length" class="mt-4 space-y-3">
+            <div
+              v-if="headers.length && config.type !== 'pie'"
+              class="mt-4 space-y-3"
+            >
               <label class="block text-sm font-medium italic text-slate-600"
                 >Séries à afficher :</label
               >
@@ -63,51 +89,46 @@
           <section
             class="bg-white p-4 rounded-lg shadow-sm border border-slate-200 space-y-4"
           >
-            <h2 class="font-semibold">2. Configuration</h2>
-            <div class="space-y-2">
-              <label class="block text-xs font-bold text-slate-500 uppercase"
-                >Type de graphique</label
-              >
-              <select
-                v-model="config.type"
-                class="w-full border p-2 rounded text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="line">📈 Courbe (Ligne)</option>
-                <option value="bar">📊 Histogramme (Vertical)</option>
-                <option value="horizontalBar">
-                  📋 Histogramme (Horizontal)
-                </option>
-              </select>
-            </div>
-            <div class="space-y-2">
-              <label class="block text-xs font-bold text-slate-500 uppercase"
-                >Titre</label
-              >
+            <h2 class="font-semibold">3. Titre et Options</h2>
+            <input
+              v-model="config.title"
+              placeholder="Titre du graphique"
+              class="w-full border p-2 rounded text-sm"
+            />
+            <input
+              v-model="config.source"
+              placeholder="Source (ex: INSEE)"
+              class="w-full border p-2 rounded text-sm"
+            />
+
+            <div
+              v-if="config.type === 'pie'"
+              class="flex items-center gap-2 mt-2 bg-slate-50 p-2 rounded border border-dashed border-slate-300"
+            >
               <input
-                v-model="config.title"
-                placeholder="Titre du graphique"
-                class="w-full border p-2 rounded text-sm"
+                type="checkbox"
+                id="showLegend"
+                v-model="config.showPieLegend"
+                class="w-4 h-4 rounded text-blue-600"
               />
-            </div>
-            <div class="space-y-2">
-              <label class="block text-xs font-bold text-slate-500 uppercase"
-                >Source</label
+              <label
+                for="showLegend"
+                class="text-xs font-bold text-slate-600 cursor-pointer text-blue-700"
+                >Afficher la légende</label
               >
-              <input
-                v-model="config.source"
-                placeholder="Source des données"
-                class="w-full border p-2 rounded text-sm"
-              />
             </div>
           </section>
 
           <section
             class="bg-white p-4 rounded-lg shadow-sm border border-slate-200"
           >
+            <h2 class="font-semibold mb-3 italic text-slate-500 text-sm">
+              Projet
+            </h2>
             <div class="grid grid-cols-2 gap-2">
               <button
                 @click="newProject"
-                class="col-span-2 bg-slate-200 py-2 rounded text-sm font-bold hover:bg-slate-300 transition-colors"
+                class="col-span-2 bg-slate-100 py-2 rounded text-xs font-bold hover:bg-slate-200 border border-slate-200 transition-colors italic"
               >
                 Nettoyer tout
               </button>
@@ -140,7 +161,6 @@
             id="capture-zone"
           >
             <div id="chart-container" class="w-full leading-[0]"></div>
-
             <div
               class="p-4 border-t border-slate-50 bg-slate-50/50"
               v-if="config.source"

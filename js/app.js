@@ -5,14 +5,52 @@ const app = createApp({
     const rawInput = ref("");
     const items = ref([]);
     const mapping = ref({ x: "", yKeys: [] });
-    const config = ref({ title: "Mon Graphique", source: "", type: "line" });
+    const config = ref({
+      title: "",
+      source: "",
+      type: "line",
+      showPieLegend: false,
+    });
     const isTextSelected = ref(false);
     const applyToSerie = ref(false);
     const fileInput = ref(null);
     const history = ref([]);
     const isUndoing = ref(false);
 
-    // --- SYSTÈME D'ANNULATION (UNDO) ---
+    const types = [
+      {
+        id: "line",
+        label: "📈 Courbe",
+        hint: "1ère colonne = catégories (X), autres = valeurs.",
+        ph: "Ex:\nJanvier\t100\t120\nFévrier\t110\t130",
+      },
+      {
+        id: "bar",
+        label: "📊 Hist. Vert.",
+        hint: "1ère colonne = catégories, autres = valeurs.",
+        ph: "Ex:\n2022\t45\t60\n2023\t50\t70",
+      },
+      {
+        id: "horizontalBar",
+        label: "📋 Hist. Horiz.",
+        hint: "1ère colonne = catégories, autres = valeurs.",
+        ph: "Ex:\nFrance\t80\nEspagne\t75",
+      },
+      {
+        id: "pie",
+        label: "🍕 Camembert",
+        hint: "1ère ligne = noms des parts, 2ème ligne = chiffres.",
+        ph: "Ex:\nHommes\tFemmes\tAnimaux\n47\t147\t147",
+      },
+    ];
+
+    const currentTypeHint = computed(
+      () => types.find((t) => t.id === config.value.type).hint,
+    );
+    const currentPlaceholder = computed(
+      () => types.find((t) => t.id === config.value.type).ph,
+    );
+
     const saveState = () => {
       if (isUndoing.value || items.value.length === 0) return;
       const state = JSON.stringify({
@@ -37,14 +75,12 @@ const app = createApp({
       isUndoing.value = true;
       history.value.pop();
       const prevState = JSON.parse(history.value[history.value.length - 1]);
-
       ChartModule.persistentStyles = prevState.styles || {};
       ChartModule.legendPos = prevState.legendPos || { x: null, y: null };
       config.value = prevState.config;
       mapping.value = prevState.mapping;
       items.value = prevState.items;
       rawInput.value = prevState.rawInput;
-
       nextTick(() => {
         ChartModule.render(
           "#chart-container",
@@ -58,12 +94,14 @@ const app = createApp({
       });
     };
 
-    // --- LOGIQUE DE DONNÉES ---
     const parseData = (val) => {
-      if (isUndoing.value || !val || !val.trim()) return;
+      if (isUndoing.value || !val || !val.trim()) {
+        items.value = [];
+        return;
+      }
       const rows = val.trim().split("\n");
       const heads = rows[0].split("\t").map((h) => h.trim());
-      items.value = rows.slice(1).map((row) => {
+      const newItems = rows.slice(1).map((row) => {
         const cols = row.split("\t");
         return heads.reduce((acc, h, i) => {
           const v = cols[i]?.trim().replace(",", ".");
@@ -71,16 +109,28 @@ const app = createApp({
           return acc;
         }, {});
       });
-      if (heads.length > 0 && mapping.value.yKeys.length === 0) {
-        mapping.value.x = heads[0];
-        mapping.value.yKeys = heads.slice(1);
+
+      const oldHeads = items.value.length ? Object.keys(items.value[0]) : [];
+      if (JSON.stringify(heads) !== JSON.stringify(oldHeads)) {
+        items.value = newItems;
+        history.value = [];
+        ChartModule.persistentStyles = {};
+        ChartModule.legendPos = { x: null, y: null };
+        if (config.value.type === "pie") {
+          mapping.value.x = null;
+          mapping.value.yKeys = heads;
+        } else {
+          mapping.value.x = heads[0];
+          mapping.value.yKeys = heads.slice(1);
+        }
+      } else {
+        items.value = newItems;
       }
     };
 
     watch(rawInput, (nv) => {
       parseData(nv);
     });
-
     watch(
       [items, mapping, config],
       () => {
@@ -96,68 +146,22 @@ const app = createApp({
       { deep: true },
     );
 
-    // --- PROJET ---
-    const saveProject = () => {
-      const fileName = prompt(
-        "Nom du fichier :",
-        config.value.title || "export",
-      );
-      if (!fileName) return;
-      const data = {
-        rawInput: rawInput.value,
-        mapping: mapping.value,
-        config: config.value,
-        items: items.value,
-        styles: ChartModule.persistentStyles,
-        legendPos: ChartModule.legendPos,
-      };
-      const blob = new Blob([JSON.stringify(data, null, 2)], {
-        type: "application/json",
-      });
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = `${fileName}.json`;
-      link.click();
-    };
-
-    const openProject = (event) => {
-      const file = event.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const data = JSON.parse(e.target.result);
-          isUndoing.value = true;
-          ChartModule.persistentStyles = data.styles || {};
-          ChartModule.legendPos = data.legendPos || { x: null, y: null };
-          config.value = data.config;
-          mapping.value = data.mapping;
-          rawInput.value = data.rawInput;
-          items.value = data.items;
-          nextTick(() => {
-            ChartModule.render(
-              "#chart-container",
-              items.value,
-              mapping.value,
-              config.value,
-            );
-            window.setTimeout(() => {
-              isUndoing.value = false;
-              saveState();
-            }, 200);
-          });
-        } catch (err) {
-          alert("Format invalide.");
-        }
-      };
-      reader.readAsText(file);
-    };
+    watch(
+      () => config.value.type,
+      () => {
+        ChartModule.deselectText();
+        parseData(rawInput.value);
+      },
+    );
 
     return {
       rawInput,
       items,
       mapping,
       config,
+      types,
+      currentTypeHint,
+      currentPlaceholder,
       isTextSelected,
       applyToSerie,
       history,
@@ -197,11 +201,64 @@ const app = createApp({
       },
       newProject: () => location.reload(),
       triggerOpenFile: () => fileInput.value.click(),
-      saveProject,
-      openProject,
+      saveProject: () => {
+        const fileName = prompt(
+          "Nom du fichier :",
+          config.value.title || "sauvegarde",
+        );
+        if (!fileName) return;
+        const data = {
+          rawInput: rawInput.value,
+          mapping: mapping.value,
+          config: config.value,
+          items: items.value,
+          styles: ChartModule.persistentStyles,
+          legendPos: ChartModule.legendPos,
+        };
+        const blob = new Blob([JSON.stringify(data, null, 2)], {
+          type: "application/json",
+        });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `${fileName}.json`;
+        link.click();
+      },
+      openProject: (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const data = JSON.parse(e.target.result);
+            isUndoing.value = true;
+            ChartModule.persistentStyles = data.styles || {};
+            ChartModule.legendPos = data.legendPos || { x: null, y: null };
+            config.value = data.config;
+            mapping.value = data.mapping;
+            rawInput.value = data.rawInput;
+            items.value = data.items;
+            nextTick(() => {
+              ChartModule.render(
+                "#chart-container",
+                items.value,
+                mapping.value,
+                config.value,
+              );
+              window.setTimeout(() => {
+                isUndoing.value = false;
+                saveState();
+              }, 200);
+            });
+          } catch (err) {
+            alert("Erreur.");
+          }
+        };
+        reader.readAsText(file);
+      },
       saveState,
     };
   },
 });
+
 const vm = app.mount("#app");
 window.appInstance = vm;
