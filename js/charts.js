@@ -17,23 +17,21 @@ const ChartModule = {
     const r = parseInt(hexColor.slice(1, 3), 16),
       g = parseInt(hexColor.slice(3, 5), 16),
       b = parseInt(hexColor.slice(5, 7), 16);
-    const yiq = (r * 299 + g * 587 + b * 114) / 1000;
-    return yiq >= 128 ? "#000000" : "#FFFFFF";
+    return (r * 299 + g * 587 + b * 114) / 1000 >= 128 ? "#000000" : "#FFFFFF";
   },
 
   render(containerId, data, mapping, config) {
+    const container = d3.select(containerId);
     if (
       !data ||
       data.length === 0 ||
       !mapping.yKeys ||
       mapping.yKeys.length === 0
     ) {
-      d3.select(containerId).select("svg").remove();
+      container.select("svg").remove();
       return;
     }
 
-    const container = d3.select(containerId);
-    // On garde le SVG s'il existe mais on vide le contenu pour reconstruire proprement
     let svg = container.select("svg");
     if (svg.empty()) {
       svg = container
@@ -44,7 +42,7 @@ const ChartModule = {
           if (!e.target.closest(".editable-group")) this.deselectText();
         });
     }
-    svg.selectAll("*").remove(); // Nettoyage complet pour l'édition dynamique
+    svg.selectAll("*").remove();
 
     const width = 800,
       height = 500,
@@ -64,7 +62,6 @@ const ChartModule = {
       .domain([0, (maxY || 10) * 1.2])
       .nice();
 
-    // Axes
     g.append("g")
       .attr("transform", `translate(0,${innerH})`)
       .call(d3.axisBottom(x));
@@ -76,6 +73,7 @@ const ChartModule = {
         const node = d3.select(
           event.sourceEvent.target.closest(".editable-group"),
         );
+        if (node.empty()) return;
         const id = node.attr("data-id"),
           ox = +node.attr("data-origin-x"),
           oy = +node.attr("data-origin-y");
@@ -114,7 +112,6 @@ const ChartModule = {
         .line()
         .x((d, i) => x(xLabels[i]) + x.bandwidth() / 2)
         .y((d) => y(d[key] || 0));
-
       g.append("path")
         .datum(data)
         .attr("fill", "none")
@@ -128,7 +125,6 @@ const ChartModule = {
           id = `p-${index}-${i}`;
         const style = this.persistentStyles[id] || {},
           off = style.offset || { x: 0, y: -25 };
-
         if (!style.deleted) {
           this.addInteractiveText(
             g,
@@ -152,55 +148,6 @@ const ChartModule = {
 
     this.renderLegend(svg, width, margin, mapping, drag);
     this.applyAllStyles();
-  },
-
-  renderLegend(svg, width, margin, mapping, drag) {
-    const lx = this.legendPos.x || width - 150,
-      ly = this.legendPos.y || 100;
-    const leg = svg
-      .append("g")
-      .attr("class", "legend-container")
-      .attr("transform", `translate(${lx}, ${ly})`)
-      .call(
-        d3.drag().on("drag", (event) => {
-          this.legendPos = { x: event.x, y: event.y };
-          d3.select(".legend-container").attr(
-            "transform",
-            `translate(${event.x},${event.y})`,
-          );
-        }),
-      );
-    mapping.yKeys.forEach((key, index) => {
-      const item = leg
-          .append("g")
-          .attr("transform", `translate(0, ${index * 25})`),
-        color = this.colors[index % this.colors.length],
-        id = `leg-${index}`;
-      item
-        .append("rect")
-        .attr("width", 12)
-        .attr("height", 12)
-        .attr("fill", color);
-      const lStyle = this.persistentStyles[id] || {},
-        lOff = lStyle.offset || { x: 0, y: 0 };
-      this.addInteractiveText(
-        item,
-        20 + lOff.x,
-        10 + lOff.y,
-        key,
-        "font-bold",
-        false,
-        drag,
-        null,
-        "transparent",
-        id,
-        id,
-      );
-      item
-        .select(".editable-group")
-        .attr("data-origin-x", 20)
-        .attr("data-origin-y", 10);
-    });
   },
 
   addInteractiveText(
@@ -279,7 +226,6 @@ const ChartModule = {
       if (s.stroke) g.select("rect").attr("stroke", s.stroke);
       if (s.fontSize) g.select("text").style("font-size", s.fontSize);
       if (s.fontWeight) g.select("text").style("font-weight", s.fontWeight);
-      if (s.fontStyle) g.select("text").style("font-style", s.fontStyle);
       this.updateCartouche(g);
     });
   },
@@ -293,7 +239,7 @@ const ChartModule = {
       this.storeStyle(g.attr("data-id"), "fontWeight", w);
       this.updateCartouche(g);
     };
-    all ? this.applyToSerie(fn) : fn(this.selectedText);
+    all ? this.applyToSerie(fn) : this.selectedText && fn(this.selectedText);
   },
 
   toggleItalic(all) {
@@ -304,7 +250,7 @@ const ChartModule = {
       this.storeStyle(g.attr("data-id"), "fontStyle", s);
       this.updateCartouche(g);
     };
-    all ? this.applyToSerie(fn) : fn(this.selectedText);
+    all ? this.applyToSerie(fn) : this.selectedText && fn(this.selectedText);
   },
 
   toggleOutline(all) {
@@ -325,7 +271,7 @@ const ChartModule = {
       }
       this.updateCartouche(g);
     };
-    all ? this.applyToSerie(fn) : fn(this.selectedText);
+    all ? this.applyToSerie(fn) : this.selectedText && fn(this.selectedText);
   },
 
   setBgColor(c, all) {
@@ -334,7 +280,7 @@ const ChartModule = {
       this.storeStyle(g.attr("data-id"), "fill", c);
       this.updateCartouche(g);
     };
-    all ? this.applyToSerie(fn) : fn(this.selectedText);
+    all ? this.applyToSerie(fn) : this.selectedText && fn(this.selectedText);
   },
 
   setFontSize(s, all) {
@@ -343,7 +289,7 @@ const ChartModule = {
       this.storeStyle(g.attr("data-id"), "fontSize", s + "px");
       this.updateCartouche(g);
     };
-    all ? this.applyToSerie(fn) : fn(this.selectedText);
+    all ? this.applyToSerie(fn) : this.selectedText && fn(this.selectedText);
   },
 
   deleteText() {
@@ -352,6 +298,7 @@ const ChartModule = {
       this.storeStyle(id, "deleted", true);
       this.selectedText.remove();
       this.deselectText();
+      if (window.appInstance) window.appInstance.saveState();
     }
   },
 
@@ -374,6 +321,53 @@ const ChartModule = {
     const sId = this.selectedText.attr("data-serie");
     d3.selectAll(`.editable-group[data-serie='${sId}']`).each(function () {
       cb(d3.select(this));
+    });
+    if (window.appInstance) window.appInstance.saveState();
+  },
+
+  renderLegend(svg, width, margin, mapping, drag) {
+    const lx = this.legendPos.x || width - 150,
+      ly = this.legendPos.y || 100;
+    const leg = svg
+      .append("g")
+      .attr("class", "legend-container")
+      .attr("transform", `translate(${lx}, ${ly})`)
+      .call(
+        d3.drag().on("drag", (event) => {
+          this.legendPos = { x: event.x, y: event.y };
+          d3.select(".legend-container").attr(
+            "transform",
+            `translate(${event.x},${event.y})`,
+          );
+        }),
+      );
+
+    mapping.yKeys.forEach((key, index) => {
+      const item = leg
+          .append("g")
+          .attr("transform", `translate(0, ${index * 25})`),
+        color = this.colors[index % this.colors.length],
+        id = `leg-${index}`;
+      item
+        .append("rect")
+        .attr("width", 12)
+        .attr("height", 12)
+        .attr("fill", color);
+      const style = this.persistentStyles[id] || {},
+        off = style.offset || { x: 0, y: 0 };
+      this.addInteractiveText(
+        item,
+        20 + off.x,
+        10 + off.y,
+        key,
+        "font-bold",
+        false,
+        drag,
+        null,
+        "transparent",
+        id,
+        id,
+      );
     });
   },
 };
