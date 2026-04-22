@@ -79,6 +79,18 @@
 
           <section class="bg-white p-4 rounded-lg shadow-sm space-y-3">
             <h2 class="font-semibold">2. Personnalisation</h2>
+            <div class="space-y-2">
+              <label class="block text-xs font-bold text-slate-500 uppercase"
+                >Type de graphique</label
+              >
+              <select
+                v-model="config.type"
+                class="w-full border p-2 rounded text-sm bg-slate-50"
+              >
+                <option value="line">📈 Courbe (Ligne)</option>
+                <option value="bar">📊 Histogramme (Barres)</option>
+              </select>
+            </div>
             <input
               v-model="config.title"
               placeholder="Titre du graphique"
@@ -89,13 +101,6 @@
               placeholder="Source (ex: INSEE 2024)"
               class="w-full border p-2 rounded text-sm"
             />
-            <select
-              v-model="config.type"
-              class="w-full border p-2 rounded bg-slate-100"
-            >
-              <option value="bar">Histogramme</option>
-              <option value="line">Courbe</option>
-            </select>
           </section>
           <section class="bg-white p-4 rounded-lg shadow-sm space-y-3">
             <h2 class="font-semibold">3. Gestion de projet</h2>

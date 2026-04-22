@@ -12,7 +12,6 @@ const app = createApp({
     const history = ref([]);
     const isUndoing = ref(false);
 
-    // --- SYSTÈME UNDO (n-1) ---
     const saveState = () => {
       if (isUndoing.value || items.value.length === 0) return;
       const state = JSON.stringify({
@@ -37,14 +36,12 @@ const app = createApp({
       isUndoing.value = true;
       history.value.pop();
       const prevState = JSON.parse(history.value[history.value.length - 1]);
-
       ChartModule.persistentStyles = prevState.styles || {};
       ChartModule.legendPos = prevState.legendPos || { x: null, y: null };
       config.value = prevState.config;
       mapping.value = prevState.mapping;
       items.value = prevState.items;
       rawInput.value = prevState.rawInput;
-
       nextTick(() => {
         ChartModule.render(
           "#chart-container",
@@ -58,7 +55,6 @@ const app = createApp({
       });
     };
 
-    // --- PARSING DES DONNÉES ---
     const parseData = (val) => {
       if (isUndoing.value || !val || !val.trim()) return;
       const rows = val.trim().split("\n");
@@ -77,11 +73,9 @@ const app = createApp({
       }
     };
 
-    // --- WATCHERS (MISE À JOUR DYNAMIQUE) ---
     watch(rawInput, (nv) => {
       parseData(nv);
     });
-
     watch(
       [items, mapping, config],
       () => {
@@ -96,63 +90,6 @@ const app = createApp({
       },
       { deep: true },
     );
-
-    // --- PROJET ---
-    const saveProject = () => {
-      const fileName = prompt(
-        "Nom du fichier :",
-        config.value.title || "export",
-      );
-      if (!fileName) return;
-      const data = {
-        rawInput: rawInput.value,
-        mapping: mapping.value,
-        config: config.value,
-        items: items.value,
-        styles: ChartModule.persistentStyles,
-        legendPos: ChartModule.legendPos,
-      };
-      const blob = new Blob([JSON.stringify(data, null, 2)], {
-        type: "application/json",
-      });
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = `${fileName}.json`;
-      link.click();
-    };
-
-    const openProject = (event) => {
-      const file = event.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const data = JSON.parse(e.target.result);
-          isUndoing.value = true;
-          ChartModule.persistentStyles = data.styles || {};
-          ChartModule.legendPos = data.legendPos || { x: null, y: null };
-          config.value = data.config;
-          mapping.value = data.mapping;
-          rawInput.value = data.rawInput;
-          items.value = data.items;
-          nextTick(() => {
-            ChartModule.render(
-              "#chart-container",
-              items.value,
-              mapping.value,
-              config.value,
-            );
-            window.setTimeout(() => {
-              isUndoing.value = false;
-              saveState();
-            }, 200);
-          });
-        } catch (err) {
-          alert("Erreur de fichier.");
-        }
-      };
-      reader.readAsText(file);
-    };
 
     return {
       rawInput,
@@ -198,8 +135,60 @@ const app = createApp({
       },
       newProject: () => location.reload(),
       triggerOpenFile: () => fileInput.value.click(),
-      saveProject,
-      openProject,
+      saveProject: () => {
+        const fileName = prompt(
+          "Nom du fichier :",
+          config.value.title || "export",
+        );
+        if (!fileName) return;
+        const data = {
+          rawInput: rawInput.value,
+          mapping: mapping.value,
+          config: config.value,
+          items: items.value,
+          styles: ChartModule.persistentStyles,
+          legendPos: ChartModule.legendPos,
+        };
+        const blob = new Blob([JSON.stringify(data, null, 2)], {
+          type: "application/json",
+        });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `${fileName}.json`;
+        link.click();
+      },
+      openProject: (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const data = JSON.parse(e.target.result);
+            isUndoing.value = true;
+            ChartModule.persistentStyles = data.styles || {};
+            ChartModule.legendPos = data.legendPos || { x: null, y: null };
+            config.value = data.config;
+            mapping.value = data.mapping;
+            rawInput.value = data.rawInput;
+            items.value = data.items;
+            nextTick(() => {
+              ChartModule.render(
+                "#chart-container",
+                items.value,
+                mapping.value,
+                config.value,
+              );
+              window.setTimeout(() => {
+                isUndoing.value = false;
+                saveState();
+              }, 200);
+            });
+          } catch (err) {
+            alert("Erreur.");
+          }
+        };
+        reader.readAsText(file);
+      },
       saveState,
     };
   },

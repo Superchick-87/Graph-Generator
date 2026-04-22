@@ -37,7 +37,7 @@ const ChartModule = {
           if (!e.target.closest(".editable-group")) this.deselectText();
         });
     }
-    svg.selectAll("*").remove(); // On vide pour reconstruire dynamiquement
+    svg.selectAll("*").remove();
 
     const width = 800,
       height = 500,
@@ -57,7 +57,16 @@ const ChartModule = {
       .domain([0, (maxY || 10) * 1.2])
       .nice();
 
-    // Axes
+    // Sous-échelle pour l'histogramme (barres groupées)
+    const isBar = config.type === "bar";
+    const xSub = isBar
+      ? d3
+          .scaleBand()
+          .domain(mapping.yKeys)
+          .range([0, x.bandwidth()])
+          .padding(0.05)
+      : null;
+
     g.append("g")
       .attr("transform", `translate(0,${innerH})`)
       .call(d3.axisBottom(x));
@@ -86,7 +95,7 @@ const ChartModule = {
       svg,
       400 + tOff.x,
       40 + tOff.y,
-      config.title || "",
+      config.title || "Titre",
       "text-xl font-bold",
       true,
       drag,
@@ -96,26 +105,46 @@ const ChartModule = {
       "main-title",
     );
 
-    // Séries & Points
+    // Séries
     mapping.yKeys.forEach((key, index) => {
       const color = this.colors[index % this.colors.length];
-      const lineGen = d3
-        .line()
-        .x((d, i) => x(xLabels[i]) + x.bandwidth() / 2)
-        .y((d) => y(d[key] || 0));
-      g.append("path")
-        .datum(data)
-        .attr("fill", "none")
-        .attr("stroke", color)
-        .attr("stroke-width", 3)
-        .attr("d", lineGen);
 
+      if (!isBar) {
+        // Rendu Ligne
+        const lineGen = d3
+          .line()
+          .x((d, i) => x(xLabels[i]) + x.bandwidth() / 2)
+          .y((d) => y(d[key] || 0));
+        g.append("path")
+          .datum(data)
+          .attr("fill", "none")
+          .attr("stroke", color)
+          .attr("stroke-width", 3)
+          .attr("d", lineGen);
+      } else {
+        // Rendu Barres (Histogramme)
+        g.selectAll(`.bar-${index}`)
+          .data(data)
+          .enter()
+          .append("rect")
+          .attr("x", (d, i) => x(xLabels[i]) + xSub(key))
+          .attr("y", (d) => y(d[key] || 0))
+          .attr("width", xSub.bandwidth())
+          .attr("height", (d) => innerH - y(d[key] || 0))
+          .attr("fill", color)
+          .attr("opacity", 0.7);
+      }
+
+      // Points et étiquettes
       data.forEach((d, i) => {
-        const cx = x(xLabels[i]) + x.bandwidth() / 2,
-          cy = y(d[key] || 0),
-          id = `p-${index}-${i}`;
+        const cx = isBar
+          ? x(xLabels[i]) + xSub(key) + xSub.bandwidth() / 2
+          : x(xLabels[i]) + x.bandwidth() / 2;
+        const cy = y(d[key] || 0);
+        const id = `p-${index}-${i}`;
         const style = this.persistentStyles[id] || {},
           off = style.offset || { x: 0, y: -25 };
+
         if (!style.deleted) {
           const finalColor = style.fill || color;
           this.addInteractiveText(
@@ -137,6 +166,7 @@ const ChartModule = {
         }
       });
     });
+
     this.renderLegend(svg, width, margin, mapping, drag);
     this.applyAllStyles();
   },
@@ -166,7 +196,7 @@ const ChartModule = {
       .attr("rx", 4)
       .attr("ry", 4)
       .attr("fill", bgColor || "transparent");
-    const finalLabel =
+    const label =
       this.persistentStyles[uniqueId] && this.persistentStyles[uniqueId].text
         ? this.persistentStyles[uniqueId].text
         : text;
@@ -175,7 +205,7 @@ const ChartModule = {
       .attr("text-anchor", centered ? "middle" : "start")
       .attr("class", classes)
       .style("font-size", "12px")
-      .text(finalLabel);
+      .text(label);
     this.updateCartouche(group);
     group
       .on("click", (e) => {
@@ -226,7 +256,7 @@ const ChartModule = {
       if (s.stroke) g.select("rect").attr("stroke", s.stroke);
       if (s.fontSize) g.select("text").style("font-size", s.fontSize);
       if (s.fontWeight) g.select("text").style("font-weight", s.fontWeight);
-      if (s.fontStyle) g.select("text").style("font-style", s.fontStyle);
+      if (s.text) g.select("text").text(s.text);
       this.updateCartouche(g);
     });
   },
