@@ -136,15 +136,19 @@
 
         <main class="col-span-8">
           <div
-            class="bg-white p-6 rounded-xl shadow-lg border border-slate-200 min-h-[600px] flex flex-col items-center"
+            class="bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden"
+            id="capture-zone"
           >
-            <div id="chart-container" class="w-full"></div>
-            <p
-              class="text-xs italic text-slate-400 mt-6 roboto"
+            <div id="chart-container" class="w-full leading-[0]"></div>
+
+            <div
+              class="p-4 border-t border-slate-50 bg-slate-50/50"
               v-if="config.source"
             >
-              Source : {{config.source}}
-            </p>
+              <p class="text-xs italic text-slate-400 roboto">
+                Source : {{config.source}}
+              </p>
+            </div>
           </div>
         </main>
       </div>

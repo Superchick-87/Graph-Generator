@@ -32,7 +32,10 @@ const ChartModule = {
       svg = container
         .append("svg")
         .attr("viewBox", `0 0 800 500`)
-        .style("background", "white")
+        .attr("preserveAspectRatio", "xMidYMid meet")
+        .style("width", "100%")
+        .style("height", "auto")
+        .style("background", "transparent")
         .on("click", (e) => {
           if (e.target.tagName === "svg") this.deselectText();
         });
@@ -40,20 +43,22 @@ const ChartModule = {
     svg.selectAll("*").remove();
 
     const width = 800,
-      height = 500,
-      margin = { top: 80, right: 100, bottom: 80, left: 120 };
+      height = 500;
+    const margin = { top: 70, right: 40, bottom: 60, left: 100 }; // Top augmenté pour le titre
     const innerW = width - margin.left - margin.right,
       innerH = height - margin.top - margin.bottom;
+
+    // Groupe pour le contenu du graphique (Axes + Data)
     const g = svg
       .append("g")
       .attr("transform", `translate(${margin.left},${margin.top})`);
 
+    // --- CONFIGURATION ---
     const isHoriz = config.type === "horizontalBar";
     const isBar = config.type === "bar" || isHoriz;
     const xLabels = data.map((d, i) => (mapping.x ? d[mapping.x] : i + 1));
     const maxY = d3.max(data, (d) => d3.max(mapping.yKeys, (k) => d[k] || 0));
 
-    // ÉCHELLES DYNAMIQUES
     let xScale, yScale, xSub, ySub;
     if (isHoriz) {
       yScale = d3.scaleBand().range([0, innerH]).padding(0.3).domain(xLabels);
@@ -83,6 +88,7 @@ const ChartModule = {
         : null;
     }
 
+    // Axes
     g.append("g")
       .attr("transform", `translate(0,${innerH})`)
       .call(d3.axisBottom(xScale));
@@ -105,27 +111,9 @@ const ChartModule = {
         if (window.appInstance) window.appInstance.saveState();
       });
 
-    // TITRE
-    const tStyle = this.persistentStyles["main-title"] || {},
-      tOff = tStyle.offset || { x: 0, y: 0 };
-    this.addInteractiveText(
-      svg,
-      400 + tOff.x,
-      40 + tOff.y,
-      config.title || "Titre",
-      "text-xl font-bold",
-      true,
-      drag,
-      "#000",
-      "transparent",
-      "title",
-      "main-title",
-    );
-
-    // SÉRIES
+    // --- RENDU DES SÉRIES ---
     mapping.yKeys.forEach((key, index) => {
       const color = this.colors[index % this.colors.length];
-
       if (!isBar) {
         const lineGen = d3
           .line()
@@ -197,6 +185,29 @@ const ChartModule = {
         }
       });
     });
+
+    // --- TITRE (ANCRÉ AU SVG DIRECTEMENT) ---
+    // x=400 (milieu de 800), y=30 (haut du graphique)
+    const tStyle = this.persistentStyles["main-title"] || {},
+      tOff = tStyle.offset || { x: 0, y: 0 };
+    this.addInteractiveText(
+      svg,
+      400 + tOff.x,
+      30 + tOff.y,
+      config.title || "Titre",
+      "text-xl font-bold",
+      true,
+      drag,
+      "#000",
+      "transparent",
+      "title",
+      "main-title",
+    );
+    svg
+      .select("[data-id='main-title']")
+      .attr("data-origin-x", 400)
+      .attr("data-origin-y", 30);
+
     this.renderLegend(svg, width, margin, mapping, drag);
     this.applyAllStyles();
   },
@@ -286,6 +297,7 @@ const ChartModule = {
       if (s.stroke) g.select("rect").attr("stroke", s.stroke);
       if (s.fontSize) g.select("text").style("font-size", s.fontSize);
       if (s.fontWeight) g.select("text").style("font-weight", s.fontWeight);
+      if (s.fontStyle) g.select("text").style("font-style", s.fontStyle);
       if (s.text) g.select("text").text(s.text);
       this.updateCartouche(g);
     });
@@ -407,9 +419,10 @@ const ChartModule = {
     });
     if (window.appInstance) window.appInstance.saveState();
   },
+
   renderLegend(svg, width, margin, mapping, drag) {
     const lx = this.legendPos.x || width - 150,
-      ly = this.legendPos.y || 100;
+      ly = this.legendPos.y || 60;
     const leg = svg
       .append("g")
       .attr("class", "legend-container")
@@ -434,8 +447,8 @@ const ChartModule = {
         .attr("width", 12)
         .attr("height", 12)
         .attr("fill", color);
-      const style = this.persistentStyles[id] || {},
-        off = style.offset || { x: 0, y: 0 };
+      const s = this.persistentStyles[id] || {},
+        off = s.offset || { x: 0, y: 0 };
       this.addInteractiveText(
         item,
         20 + off.x,
