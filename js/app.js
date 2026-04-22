@@ -9,23 +9,20 @@ const app = createApp({
     const isTextSelected = ref(false);
     const applyToSerie = ref(false);
     const fileInput = ref(null);
-
     const history = ref([]);
     const isUndoing = ref(false);
 
-    // Capture l'état complet y compris le texte brut exact
+    // --- SYSTÈME UNDO (n-1) ---
     const saveState = () => {
       if (isUndoing.value || items.value.length === 0) return;
-
       const state = JSON.stringify({
         styles: JSON.parse(JSON.stringify(ChartModule.persistentStyles)),
         config: JSON.parse(JSON.stringify(config.value)),
         mapping: JSON.parse(JSON.stringify(mapping.value)),
         items: JSON.parse(JSON.stringify(items.value)),
-        rawInput: rawInput.value, // Sauvegarde le texte brut avec libellés
+        rawInput: rawInput.value,
         legendPos: JSON.parse(JSON.stringify(ChartModule.legendPos)),
       });
-
       if (
         history.value.length === 0 ||
         history.value[history.value.length - 1] !== state
@@ -37,19 +34,15 @@ const app = createApp({
 
     const undo = () => {
       if (history.value.length <= 1) return;
-
       isUndoing.value = true;
       history.value.pop();
       const prevState = JSON.parse(history.value[history.value.length - 1]);
 
-      // Restauration de tous les objets
       ChartModule.persistentStyles = prevState.styles || {};
       ChartModule.legendPos = prevState.legendPos || { x: null, y: null };
       config.value = prevState.config;
       mapping.value = prevState.mapping;
       items.value = prevState.items;
-
-      // RESTAURATION DU TEXTE BRUT (Évite l'effacement des libellés)
       rawInput.value = prevState.rawInput;
 
       nextTick(() => {
@@ -61,17 +54,15 @@ const app = createApp({
         );
         window.setTimeout(() => {
           isUndoing.value = false;
-        }, 150);
+        }, 100);
       });
     };
 
+    // --- PARSING DES DONNÉES ---
     const parseData = (val) => {
-      // On ne parse pas si on est en train d'annuler (car items est déjà restauré)
       if (isUndoing.value || !val || !val.trim()) return;
-
       const rows = val.trim().split("\n");
       const heads = rows[0].split("\t").map((h) => h.trim());
-
       items.value = rows.slice(1).map((row) => {
         const cols = row.split("\t");
         return heads.reduce((acc, h, i) => {
@@ -80,27 +71,17 @@ const app = createApp({
           return acc;
         }, {});
       });
-
       if (heads.length > 0 && mapping.value.yKeys.length === 0) {
         mapping.value.x = heads[0];
         mapping.value.yKeys = heads.slice(1);
       }
-
-      nextTick(() => {
-        ChartModule.render(
-          "#chart-container",
-          items.value,
-          mapping.value,
-          config.value,
-        );
-      });
     };
 
-    watch(rawInput, (newVal) => {
-      parseData(newVal);
+    // --- WATCHERS (MISE À JOUR DYNAMIQUE) ---
+    watch(rawInput, (nv) => {
+      parseData(nv);
     });
 
-    // Surveillance des changements manuels dans "Edition des points"
     watch(
       [items, mapping, config],
       () => {
@@ -116,6 +97,63 @@ const app = createApp({
       { deep: true },
     );
 
+    // --- PROJET ---
+    const saveProject = () => {
+      const fileName = prompt(
+        "Nom du fichier :",
+        config.value.title || "export",
+      );
+      if (!fileName) return;
+      const data = {
+        rawInput: rawInput.value,
+        mapping: mapping.value,
+        config: config.value,
+        items: items.value,
+        styles: ChartModule.persistentStyles,
+        legendPos: ChartModule.legendPos,
+      };
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: "application/json",
+      });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `${fileName}.json`;
+      link.click();
+    };
+
+    const openProject = (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = JSON.parse(e.target.result);
+          isUndoing.value = true;
+          ChartModule.persistentStyles = data.styles || {};
+          ChartModule.legendPos = data.legendPos || { x: null, y: null };
+          config.value = data.config;
+          mapping.value = data.mapping;
+          rawInput.value = data.rawInput;
+          items.value = data.items;
+          nextTick(() => {
+            ChartModule.render(
+              "#chart-container",
+              items.value,
+              mapping.value,
+              config.value,
+            );
+            window.setTimeout(() => {
+              isUndoing.value = false;
+              saveState();
+            }, 200);
+          });
+        } catch (err) {
+          alert("Erreur de fichier.");
+        }
+      };
+      reader.readAsText(file);
+    };
+
     return {
       rawInput,
       items,
@@ -124,29 +162,30 @@ const app = createApp({
       isTextSelected,
       applyToSerie,
       history,
+      fileInput,
       headers: computed(() =>
         items.value.length ? Object.keys(items.value[0]) : [],
       ),
       actions: {
-        setSize: (size, all) => {
+        setSize: (s, a) => {
           saveState();
-          ChartModule.setFontSize(size, all);
+          ChartModule.setFontSize(s, a);
         },
-        bold: (all) => {
+        bold: (a) => {
           saveState();
-          ChartModule.toggleBold(all);
+          ChartModule.toggleBold(a);
         },
-        italic: (all) => {
+        italic: (a) => {
           saveState();
-          ChartModule.toggleItalic(all);
+          ChartModule.toggleItalic(a);
         },
-        setBg: (color, all) => {
+        setBg: (c, a) => {
           saveState();
-          ChartModule.setBgColor(color, all);
+          ChartModule.setBgColor(c, a);
         },
-        outline: (all) => {
+        outline: (a) => {
           saveState();
-          ChartModule.toggleOutline(all);
+          ChartModule.toggleOutline(a);
         },
         delete: () => {
           saveState();
@@ -154,26 +193,16 @@ const app = createApp({
         },
         undo: () => undo(),
       },
-      moveItem: (index, dir) => {
-        saveState();
-        const newIdx = index + dir;
-        if (newIdx < 0 || newIdx >= items.value.length) return;
-        const res = items.value.splice(index, 1)[0];
-        items.value.splice(newIdx, 0, res);
-      },
-      removeItem: (index) => {
-        saveState();
-        items.value.splice(index, 1);
-      },
       onTextSelected: (s) => {
         isTextSelected.value = s;
       },
-      saveState,
+      newProject: () => location.reload(),
       triggerOpenFile: () => fileInput.value.click(),
-      fileInput,
+      saveProject,
+      openProject,
+      saveState,
     };
   },
 });
-
 const vm = app.mount("#app");
 window.appInstance = vm;

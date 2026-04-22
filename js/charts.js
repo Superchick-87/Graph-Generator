@@ -22,12 +22,7 @@ const ChartModule = {
 
   render(containerId, data, mapping, config) {
     const container = d3.select(containerId);
-    if (
-      !data ||
-      data.length === 0 ||
-      !mapping.yKeys ||
-      mapping.yKeys.length === 0
-    ) {
+    if (!data.length || !mapping.yKeys.length) {
       container.select("svg").remove();
       return;
     }
@@ -42,7 +37,7 @@ const ChartModule = {
           if (!e.target.closest(".editable-group")) this.deselectText();
         });
     }
-    svg.selectAll("*").remove();
+    svg.selectAll("*").remove(); // On vide pour reconstruire dynamiquement
 
     const width = 800,
       height = 500,
@@ -62,6 +57,7 @@ const ChartModule = {
       .domain([0, (maxY || 10) * 1.2])
       .nice();
 
+    // Axes
     g.append("g")
       .attr("transform", `translate(0,${innerH})`)
       .call(d3.axisBottom(x));
@@ -73,7 +69,6 @@ const ChartModule = {
         const node = d3.select(
           event.sourceEvent.target.closest(".editable-group"),
         );
-        if (node.empty()) return;
         const id = node.attr("data-id"),
           ox = +node.attr("data-origin-x"),
           oy = +node.attr("data-origin-y");
@@ -100,12 +95,8 @@ const ChartModule = {
       "title",
       "main-title",
     );
-    svg
-      .select("[data-id='main-title']")
-      .attr("data-origin-x", 400)
-      .attr("data-origin-y", 40);
 
-    // Séries
+    // Séries & Points
     mapping.yKeys.forEach((key, index) => {
       const color = this.colors[index % this.colors.length];
       const lineGen = d3
@@ -126,6 +117,7 @@ const ChartModule = {
         const style = this.persistentStyles[id] || {},
           off = style.offset || { x: 0, y: -25 };
         if (!style.deleted) {
+          const finalColor = style.fill || color;
           this.addInteractiveText(
             g,
             cx + off.x,
@@ -135,7 +127,7 @@ const ChartModule = {
             true,
             drag,
             null,
-            color,
+            finalColor,
             index,
             id,
           );
@@ -145,7 +137,6 @@ const ChartModule = {
         }
       });
     });
-
     this.renderLegend(svg, width, margin, mapping, drag);
     this.applyAllStyles();
   },
@@ -175,17 +166,26 @@ const ChartModule = {
       .attr("rx", 4)
       .attr("ry", 4)
       .attr("fill", bgColor || "transparent");
+    const finalLabel =
+      this.persistentStyles[uniqueId] && this.persistentStyles[uniqueId].text
+        ? this.persistentStyles[uniqueId].text
+        : text;
     group
       .append("text")
       .attr("text-anchor", centered ? "middle" : "start")
       .attr("class", classes)
       .style("font-size", "12px")
-      .text(text);
+      .text(finalLabel);
     this.updateCartouche(group);
-    group.on("click", (e) => {
-      e.stopPropagation();
-      this.selectText(group);
-    });
+    group
+      .on("click", (e) => {
+        e.stopPropagation();
+        this.selectText(group);
+      })
+      .on("dblclick", (e) => {
+        e.stopPropagation();
+        this.makeInlineEditable(group.select("text"), group);
+      });
   },
 
   updateCartouche(group) {
@@ -226,10 +226,54 @@ const ChartModule = {
       if (s.stroke) g.select("rect").attr("stroke", s.stroke);
       if (s.fontSize) g.select("text").style("font-size", s.fontSize);
       if (s.fontWeight) g.select("text").style("font-weight", s.fontWeight);
+      if (s.fontStyle) g.select("text").style("font-style", s.fontStyle);
       this.updateCartouche(g);
     });
   },
 
+  makeInlineEditable(d3Text, group) {
+    const el = d3Text.node(),
+      bbox = el.getBBox(),
+      matrix = el.getScreenCTM();
+    d3Text.style("visibility", "hidden");
+    const input = document.createElement("input");
+    input.value = d3Text.text();
+    input.style.position = "absolute";
+    input.style.left = matrix.e + window.scrollX + "px";
+    input.style.top = matrix.f + window.scrollY - bbox.height + "px";
+    document.body.appendChild(input);
+    input.focus();
+    const save = () => {
+      d3Text.text(input.value).style("visibility", "visible");
+      this.storeStyle(group.attr("data-id"), "text", input.value);
+      this.updateCartouche(group);
+      if (input.parentNode) input.parentNode.removeChild(input);
+      if (window.appInstance) window.appInstance.saveState();
+    };
+    input.onkeydown = (e) => {
+      if (e.key === "Enter") save();
+    };
+    input.onblur = save;
+  },
+
+  setBgColor(c, all) {
+    const fn = (g) => {
+      g.select("rect").attr("fill", c).attr("stroke", "none");
+      this.storeStyle(g.attr("data-id"), "fill", c);
+      this.updateCartouche(g);
+    };
+    all ? this.applyToSerie(fn) : this.selectedText && fn(this.selectedText);
+    if (window.appInstance) window.appInstance.saveState();
+  },
+  setFontSize(s, all) {
+    const fn = (g) => {
+      g.select("text").style("font-size", s + "px");
+      this.storeStyle(g.attr("data-id"), "fontSize", s + "px");
+      this.updateCartouche(g);
+    };
+    all ? this.applyToSerie(fn) : this.selectedText && fn(this.selectedText);
+    if (window.appInstance) window.appInstance.saveState();
+  },
   toggleBold(all) {
     const fn = (g) => {
       const t = g.select("text"),
@@ -240,8 +284,8 @@ const ChartModule = {
       this.updateCartouche(g);
     };
     all ? this.applyToSerie(fn) : this.selectedText && fn(this.selectedText);
+    if (window.appInstance) window.appInstance.saveState();
   },
-
   toggleItalic(all) {
     const fn = (g) => {
       const t = g.select("text"),
@@ -251,8 +295,8 @@ const ChartModule = {
       this.updateCartouche(g);
     };
     all ? this.applyToSerie(fn) : this.selectedText && fn(this.selectedText);
+    if (window.appInstance) window.appInstance.saveState();
   },
-
   toggleOutline(all) {
     const fn = (g) => {
       const r = g.select("rect"),
@@ -272,26 +316,8 @@ const ChartModule = {
       this.updateCartouche(g);
     };
     all ? this.applyToSerie(fn) : this.selectedText && fn(this.selectedText);
+    if (window.appInstance) window.appInstance.saveState();
   },
-
-  setBgColor(c, all) {
-    const fn = (g) => {
-      g.select("rect").attr("fill", c).attr("stroke", "none");
-      this.storeStyle(g.attr("data-id"), "fill", c);
-      this.updateCartouche(g);
-    };
-    all ? this.applyToSerie(fn) : this.selectedText && fn(this.selectedText);
-  },
-
-  setFontSize(s, all) {
-    const fn = (g) => {
-      g.select("text").style("font-size", s + "px");
-      this.storeStyle(g.attr("data-id"), "fontSize", s + "px");
-      this.updateCartouche(g);
-    };
-    all ? this.applyToSerie(fn) : this.selectedText && fn(this.selectedText);
-  },
-
   deleteText() {
     if (this.selectedText) {
       const id = this.selectedText.attr("data-id");
@@ -301,21 +327,18 @@ const ChartModule = {
       if (window.appInstance) window.appInstance.saveState();
     }
   },
-
   selectText(g) {
     this.deselectText();
     this.selectedText = g;
     g.select("rect").style("outline", "2px solid #0069b4");
     if (window.appInstance) window.appInstance.onTextSelected(true);
   },
-
   deselectText() {
     if (this.selectedText)
       this.selectedText.select("rect").style("outline", "none");
     this.selectedText = null;
     if (window.appInstance) window.appInstance.onTextSelected(false);
   },
-
   applyToSerie(cb) {
     if (!this.selectedText) return;
     const sId = this.selectedText.attr("data-serie");
@@ -324,7 +347,6 @@ const ChartModule = {
     });
     if (window.appInstance) window.appInstance.saveState();
   },
-
   renderLegend(svg, width, margin, mapping, drag) {
     const lx = this.legendPos.x || width - 150,
       ly = this.legendPos.y || 100;
@@ -341,7 +363,6 @@ const ChartModule = {
           );
         }),
       );
-
     mapping.yKeys.forEach((key, index) => {
       const item = leg
           .append("g")
