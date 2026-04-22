@@ -34,43 +34,59 @@ const ChartModule = {
         .attr("viewBox", `0 0 800 500`)
         .style("background", "white")
         .on("click", (e) => {
-          if (!e.target.closest(".editable-group")) this.deselectText();
+          if (e.target.tagName === "svg") this.deselectText();
         });
     }
     svg.selectAll("*").remove();
 
     const width = 800,
       height = 500,
-      margin = { top: 80, right: 100, bottom: 80, left: 80 };
+      margin = { top: 80, right: 100, bottom: 80, left: 120 };
     const innerW = width - margin.left - margin.right,
       innerH = height - margin.top - margin.bottom;
     const g = svg
       .append("g")
       .attr("transform", `translate(${margin.left},${margin.top})`);
 
+    const isHoriz = config.type === "horizontalBar";
+    const isBar = config.type === "bar" || isHoriz;
     const xLabels = data.map((d, i) => (mapping.x ? d[mapping.x] : i + 1));
-    const x = d3.scaleBand().range([0, innerW]).padding(0.3).domain(xLabels);
     const maxY = d3.max(data, (d) => d3.max(mapping.yKeys, (k) => d[k] || 0));
-    const y = d3
-      .scaleLinear()
-      .range([innerH, 0])
-      .domain([0, (maxY || 10) * 1.2])
-      .nice();
 
-    // Sous-échelle pour l'histogramme (barres groupées)
-    const isBar = config.type === "bar";
-    const xSub = isBar
-      ? d3
-          .scaleBand()
-          .domain(mapping.yKeys)
-          .range([0, x.bandwidth()])
-          .padding(0.05)
-      : null;
+    // ÉCHELLES DYNAMIQUES
+    let xScale, yScale, xSub, ySub;
+    if (isHoriz) {
+      yScale = d3.scaleBand().range([0, innerH]).padding(0.3).domain(xLabels);
+      xScale = d3
+        .scaleLinear()
+        .range([0, innerW])
+        .domain([0, (maxY || 10) * 1.15])
+        .nice();
+      ySub = d3
+        .scaleBand()
+        .domain(mapping.yKeys)
+        .range([0, yScale.bandwidth()])
+        .padding(0.05);
+    } else {
+      xScale = d3.scaleBand().range([0, innerW]).padding(0.3).domain(xLabels);
+      yScale = d3
+        .scaleLinear()
+        .range([innerH, 0])
+        .domain([0, (maxY || 10) * 1.15])
+        .nice();
+      xSub = isBar
+        ? d3
+            .scaleBand()
+            .domain(mapping.yKeys)
+            .range([0, xScale.bandwidth()])
+            .padding(0.05)
+        : null;
+    }
 
     g.append("g")
       .attr("transform", `translate(0,${innerH})`)
-      .call(d3.axisBottom(x));
-    g.append("g").call(d3.axisLeft(y));
+      .call(d3.axisBottom(xScale));
+    g.append("g").call(d3.axisLeft(yScale));
 
     const drag = d3
       .drag()
@@ -78,6 +94,7 @@ const ChartModule = {
         const node = d3.select(
           event.sourceEvent.target.closest(".editable-group"),
         );
+        if (node.empty()) return;
         const id = node.attr("data-id"),
           ox = +node.attr("data-origin-x"),
           oy = +node.attr("data-origin-y");
@@ -88,7 +105,7 @@ const ChartModule = {
         if (window.appInstance) window.appInstance.saveState();
       });
 
-    // Titre
+    // TITRE
     const tStyle = this.persistentStyles["main-title"] || {},
       tOff = tStyle.offset || { x: 0, y: 0 };
     this.addInteractiveText(
@@ -105,48 +122,62 @@ const ChartModule = {
       "main-title",
     );
 
-    // Séries
+    // SÉRIES
     mapping.yKeys.forEach((key, index) => {
       const color = this.colors[index % this.colors.length];
 
       if (!isBar) {
-        // Rendu Ligne
         const lineGen = d3
           .line()
-          .x((d, i) => x(xLabels[i]) + x.bandwidth() / 2)
-          .y((d) => y(d[key] || 0));
+          .x((d, i) => xScale(xLabels[i]) + xScale.bandwidth() / 2)
+          .y((d) => yScale(d[key] || 0));
         g.append("path")
           .datum(data)
           .attr("fill", "none")
           .attr("stroke", color)
           .attr("stroke-width", 3)
           .attr("d", lineGen);
-      } else {
-        // Rendu Barres (Histogramme)
+      } else if (isHoriz) {
         g.selectAll(`.bar-${index}`)
           .data(data)
           .enter()
           .append("rect")
-          .attr("x", (d, i) => x(xLabels[i]) + xSub(key))
-          .attr("y", (d) => y(d[key] || 0))
+          .attr("y", (d, i) => yScale(xLabels[i]) + ySub(key))
+          .attr("x", 0)
+          .attr("height", ySub.bandwidth())
+          .attr("width", (d) => xScale(d[key] || 0))
+          .attr("fill", color)
+          .attr("opacity", 0.7);
+      } else {
+        g.selectAll(`.bar-${index}`)
+          .data(data)
+          .enter()
+          .append("rect")
+          .attr("x", (d, i) => xScale(xLabels[i]) + xSub(key))
+          .attr("y", (d) => yScale(d[key] || 0))
           .attr("width", xSub.bandwidth())
-          .attr("height", (d) => innerH - y(d[key] || 0))
+          .attr("height", (d) => innerH - yScale(d[key] || 0))
           .attr("fill", color)
           .attr("opacity", 0.7);
       }
 
-      // Points et étiquettes
       data.forEach((d, i) => {
-        const cx = isBar
-          ? x(xLabels[i]) + xSub(key) + xSub.bandwidth() / 2
-          : x(xLabels[i]) + x.bandwidth() / 2;
-        const cy = y(d[key] || 0);
-        const id = `p-${index}-${i}`;
-        const style = this.persistentStyles[id] || {},
-          off = style.offset || { x: 0, y: -25 };
+        let cx, cy;
+        if (isHoriz) {
+          cx = xScale(d[key] || 0);
+          cy = yScale(xLabels[i]) + ySub(key) + ySub.bandwidth() / 2;
+        } else {
+          cx =
+            xScale(xLabels[i]) +
+            (isBar ? xSub(key) + xSub.bandwidth() / 2 : xScale.bandwidth() / 2);
+          cy = yScale(d[key] || 0);
+        }
 
+        const id = `p-${index}-${i}`,
+          style = this.persistentStyles[id] || {};
+        const off =
+          style.offset || (isHoriz ? { x: 25, y: 0 } : { x: 0, y: -25 });
         if (!style.deleted) {
-          const finalColor = style.fill || color;
           this.addInteractiveText(
             g,
             cx + off.x,
@@ -156,7 +187,7 @@ const ChartModule = {
             true,
             drag,
             null,
-            finalColor,
+            style.fill || color,
             index,
             id,
           );
@@ -166,7 +197,6 @@ const ChartModule = {
         }
       });
     });
-
     this.renderLegend(svg, width, margin, mapping, drag);
     this.applyAllStyles();
   },

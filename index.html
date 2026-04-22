@@ -2,13 +2,10 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <title>Générateur de Graphiques</title>
+    <title>Graph Generator Pro</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <link rel="stylesheet" href="assets/style.css" />
     <style>
       .roboto {
         font-family: "Roboto", sans-serif;
@@ -26,38 +23,24 @@
   <body class="bg-slate-50">
     <div id="app" class="p-6 max-w-7xl mx-auto">
       <header class="mb-8 border-b pb-4 flex justify-between items-center">
-        <h1 class="text-2xl font-bold text-slate-800">
-          Graph Generator
-          <span class="text-sm font-normal text-slate-400 italic"
-            >(Mode Vectoriel)</span
-          >
-        </h1>
+        <h1 class="text-2xl font-bold text-slate-800">Graph Generator</h1>
       </header>
 
       <div class="grid grid-cols-12 gap-8">
         <aside class="col-span-4 space-y-6">
-          <section class="bg-white p-4 rounded-lg shadow-sm">
+          <section
+            class="bg-white p-4 rounded-lg shadow-sm border border-slate-200"
+          >
             <h2 class="font-semibold mb-3">1. Données (Copier-Coller)</h2>
             <textarea
               v-model="rawInput"
-              @paste="setTimeout(() => {}, 0)"
               placeholder="Collez vos cellules Excel ici..."
-              class="w-full h-40 border p-2 text-xs font-mono rounded bg-slate-50 focus:bg-white transition-all"
+              class="w-full h-64 border p-2 text-xs font-mono rounded bg-slate-50 focus:bg-white transition-all outline-none focus:ring-2 focus:ring-blue-500"
             ></textarea>
 
             <div v-if="headers.length" class="mt-4 space-y-3">
-              <label class="block text-sm font-medium"
-                >Axe X (Labels) :
-                <select
-                  v-model="mapping.x"
-                  class="w-full border p-1 rounded font-normal uppercase"
-                >
-                  <option v-for="h in headers" :key="h">{{h}}</option>
-                </select>
-              </label>
-
               <label class="block text-sm font-medium italic text-slate-600"
-                >Séries à afficher (Axe Y) :</label
+                >Séries à afficher :</label
               >
               <div class="flex flex-wrap gap-2">
                 <label
@@ -77,49 +60,66 @@
             </div>
           </section>
 
-          <section class="bg-white p-4 rounded-lg shadow-sm space-y-3">
-            <h2 class="font-semibold">2. Personnalisation</h2>
+          <section
+            class="bg-white p-4 rounded-lg shadow-sm border border-slate-200 space-y-4"
+          >
+            <h2 class="font-semibold">2. Configuration</h2>
             <div class="space-y-2">
               <label class="block text-xs font-bold text-slate-500 uppercase"
                 >Type de graphique</label
               >
               <select
                 v-model="config.type"
-                class="w-full border p-2 rounded text-sm bg-slate-50"
+                class="w-full border p-2 rounded text-sm bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="line">📈 Courbe (Ligne)</option>
-                <option value="bar">📊 Histogramme (Barres)</option>
+                <option value="bar">📊 Histogramme (Vertical)</option>
+                <option value="horizontalBar">
+                  📋 Histogramme (Horizontal)
+                </option>
               </select>
             </div>
-            <input
-              v-model="config.title"
-              placeholder="Titre du graphique"
-              class="w-full border p-2 rounded"
-            />
-            <input
-              v-model="config.source"
-              placeholder="Source (ex: INSEE 2024)"
-              class="w-full border p-2 rounded text-sm"
-            />
+            <div class="space-y-2">
+              <label class="block text-xs font-bold text-slate-500 uppercase"
+                >Titre</label
+              >
+              <input
+                v-model="config.title"
+                placeholder="Titre du graphique"
+                class="w-full border p-2 rounded text-sm"
+              />
+            </div>
+            <div class="space-y-2">
+              <label class="block text-xs font-bold text-slate-500 uppercase"
+                >Source</label
+              >
+              <input
+                v-model="config.source"
+                placeholder="Source des données"
+                class="w-full border p-2 rounded text-sm"
+              />
+            </div>
           </section>
-          <section class="bg-white p-4 rounded-lg shadow-sm space-y-3">
-            <h2 class="font-semibold">3. Gestion de projet</h2>
+
+          <section
+            class="bg-white p-4 rounded-lg shadow-sm border border-slate-200"
+          >
             <div class="grid grid-cols-2 gap-2">
               <button
                 @click="newProject"
-                class="col-span-2 bg-slate-200 hover:bg-slate-300 py-2 rounded text-sm font-bold"
+                class="col-span-2 bg-slate-200 py-2 rounded text-sm font-bold hover:bg-slate-300 transition-colors"
               >
-                + Nouveau
+                Nettoyer tout
               </button>
               <button
                 @click="triggerOpenFile"
-                class="bg-blue-50 hover:bg-blue-100 text-blue-700 py-2 rounded text-xs font-bold border border-blue-200"
+                class="bg-blue-50 text-blue-700 py-2 rounded text-xs font-bold border border-blue-200 hover:bg-blue-100 transition-colors"
               >
                 📂 Ouvrir
               </button>
               <button
                 @click="saveProject"
-                class="bg-green-50 hover:bg-green-100 text-green-700 py-2 rounded text-xs font-bold border border-green-200"
+                class="bg-green-50 text-green-700 py-2 rounded text-xs font-bold border border-green-200 hover:bg-green-100 transition-colors"
               >
                 💾 Enregistrer
               </button>
@@ -132,31 +132,15 @@
               accept=".json"
             />
           </section>
-          <div class="space-y-2">
-            <button
-              @click="exportPDF"
-              class="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700"
-            >
-              Exporter PDF (Vectoriel)
-            </button>
-            <button
-              @click="generateIframe"
-              class="w-full bg-slate-800 text-white py-2 rounded-lg hover:bg-black"
-            >
-              Copier le code Iframe
-            </button>
-          </div>
         </aside>
 
         <main class="col-span-8">
           <div
-            class="bg-white p-4 rounded-xl shadow-lg border border-slate-200"
-            id="capture-zone"
+            class="bg-white p-6 rounded-xl shadow-lg border border-slate-200 min-h-[600px] flex flex-col items-center"
           >
-            <div id="chart-container"></div>
-
+            <div id="chart-container" class="w-full"></div>
             <p
-              class="text-xs italic text-slate-400 mt-4 roboto"
+              class="text-xs italic text-slate-400 mt-6 roboto"
               v-if="config.source"
             >
               Source : {{config.source}}
@@ -184,52 +168,39 @@
               class="text-[10px] font-bold uppercase text-blue-400 cursor-pointer"
               >Appliquer à toute la série</label
             >
-
             <button
               @click="actions.undo()"
               :disabled="history.length <= 1"
-              class="ml-auto text-[10px] bg-orange-600/20 text-orange-400 px-2 py-0.5 rounded border border-orange-500/30 hover:bg-orange-600/40 disabled:opacity-30 disabled:cursor-not-allowed"
+              class="ml-auto text-[10px] bg-orange-600/20 text-orange-400 px-2 py-0.5 rounded border border-orange-500/30 hover:bg-orange-600/40 disabled:opacity-30"
             >
               ↩ Annuler
             </button>
           </div>
-
           <div class="flex items-center gap-3">
-            <span class="text-[10px] font-bold uppercase text-slate-400"
-              >Style</span
-            >
-
             <select
               @change="actions.setSize($event.target.value, applyToSerie)"
-              class="bg-slate-700 text-white text-xs border border-slate-500 rounded px-1 py-1 outline-none"
+              class="bg-slate-700 text-white text-xs rounded px-1 py-1 outline-none border border-slate-600"
             >
               <option
                 v-for="size in [8, 10, 12, 14, 16, 20, 24, 32]"
                 :value="size"
-                :selected="size === 12"
               >
-                {{size}}
+                {{size}}px
               </option>
             </select>
-
-            <div class="h-6 w-px bg-slate-600"></div>
-
             <button
               @click="actions.bold(applyToSerie)"
-              class="px-3 py-1 bg-slate-700 rounded hover:bg-slate-600 font-bold border border-slate-500 text-xs"
+              class="px-3 py-1 bg-slate-700 rounded font-bold text-xs border border-slate-600"
             >
               G
             </button>
             <button
               @click="actions.italic(applyToSerie)"
-              class="px-3 py-1 bg-slate-700 rounded hover:bg-slate-600 italic border border-slate-500 text-xs"
+              class="px-3 py-1 bg-slate-700 rounded italic text-xs border border-slate-600"
             >
               I
             </button>
-
-            <div class="h-6 w-px bg-slate-600"></div>
-
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-1">
               <input
                 type="color"
                 @input="actions.setBg($event.target.value, applyToSerie)"
@@ -242,12 +213,9 @@
                 ▢
               </button>
             </div>
-
-            <div class="h-6 w-px bg-slate-600"></div>
-
             <button
               @click="actions.delete()"
-              class="p-2 bg-red-600 rounded hover:bg-red-700 text-white"
+              class="p-2 bg-red-600 rounded hover:bg-red-700 transition-colors"
             >
               ✕
             </button>
@@ -255,7 +223,6 @@
         </div>
       </transition>
     </div>
-
     <script src="js/charts.js"></script>
     <script src="js/app.js"></script>
   </body>
