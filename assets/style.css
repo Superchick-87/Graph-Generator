@@ -1,0 +1,26 @@
+@import url("https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap");
+
+.roboto {
+  font-family: "Roboto", sans-serif;
+}
+
+/* Styles pour D3js */
+.axis-label {
+  font-size: 12px;
+  fill: #64748b;
+}
+.domain {
+  stroke: #cbd5e1;
+}
+.tick line {
+  stroke: #e2e8f0;
+}
+
+.bar:hover {
+  filter: brightness(90%);
+  cursor: pointer;
+}
+.chart-line {
+  fill: none;
+  stroke-width: 3;
+}

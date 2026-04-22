@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Générateur de Graphiques</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <link rel="stylesheet" href="assets/style.css" />
+    <style>
+      .roboto {
+        font-family: "Roboto", sans-serif;
+      }
+      .fade-enter-active,
+      .fade-leave-active {
+        transition: opacity 0.3s;
+      }
+      .fade-enter-from,
+      .fade-leave-to {
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body class="bg-slate-50">
+    <div id="app" class="p-6 max-w-7xl mx-auto">
+      <header class="mb-8 border-b pb-4 flex justify-between items-center">
+        <h1 class="text-2xl font-bold text-slate-800">
+          Graph Generator
+          <span class="text-sm font-normal text-slate-400 italic"
+            >(Mode Vectoriel)</span
+          >
+        </h1>
+      </header>
+
+      <div class="grid grid-cols-12 gap-8">
+        <aside class="col-span-4 space-y-6">
+          <section class="bg-white p-4 rounded-lg shadow-sm">
+            <h2 class="font-semibold mb-3">1. Données (Copier-Coller)</h2>
+            <textarea
+              v-model="rawInput"
+              @paste="setTimeout(() => {}, 0)"
+              placeholder="Collez vos cellules Excel ici..."
+              class="w-full h-40 border p-2 text-xs font-mono rounded bg-slate-50 focus:bg-white transition-all"
+            ></textarea>
+
+            <div
+              v-if="items.length"
+              class="mt-6 space-y-2 max-h-64 overflow-y-auto border-t pt-4"
+            >
+              <h3 class="text-xs font-bold text-slate-400 uppercase">
+                Édition des points
+              </h3>
+              <div
+                v-for="(item, index) in items"
+                :key="index"
+                class="flex items-center gap-2 bg-white p-2 rounded shadow-sm border border-slate-100"
+              >
+                <span class="text-[10px] text-slate-300 w-4"
+                  >{{index + 1}}</span
+                >
+                <input
+                  v-for="h in headers"
+                  v-model="item[h]"
+                  class="border-none bg-slate-50 text-xs p-1 rounded w-full focus:ring-1 focus:ring-blue-300 outline-none"
+                />
+                <div class="flex gap-1">
+                  <button
+                    @click="moveItem(index, -1)"
+                    class="p-1 hover:bg-slate-100 rounded text-xs"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    @click="moveItem(index, 1)"
+                    class="p-1 hover:bg-slate-100 rounded text-xs"
+                  >
+                    ↓
+                  </button>
+                  <button
+                    @click="removeItem(index)"
+                    class="p-1 hover:bg-red-50 text-red-500 rounded text-xs"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="headers.length" class="mt-4 space-y-3">
+              <label class="block text-sm font-medium"
+                >Axe X (Labels) :
+                <select
+                  v-model="mapping.x"
+                  class="w-full border p-1 rounded font-normal uppercase"
+                >
+                  <option v-for="h in headers" :key="h">{{h}}</option>
+                </select>
+              </label>
+
+              <label class="block text-sm font-medium italic text-slate-600"
+                >Séries à afficher (Axe Y) :</label
+              >
+              <div class="flex flex-wrap gap-2">
+                <label
+                  v-for="h in headers.filter(h => h !== mapping.x)"
+                  :key="h"
+                  class="flex items-center space-x-2 bg-slate-100 p-2 rounded cursor-pointer hover:bg-slate-200"
+                >
+                  <input
+                    type="checkbox"
+                    :value="h"
+                    v-model="mapping.yKeys"
+                    class="rounded text-blue-600"
+                  />
+                  <span class="text-xs font-bold">{{h}}</span>
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section class="bg-white p-4 rounded-lg shadow-sm space-y-3">
+            <h2 class="font-semibold">2. Personnalisation</h2>
+            <input
+              v-model="config.title"
+              placeholder="Titre du graphique"
+              class="w-full border p-2 rounded"
+            />
+            <input
+              v-model="config.source"
+              placeholder="Source (ex: INSEE 2024)"
+              class="w-full border p-2 rounded text-sm"
+            />
+            <select
+              v-model="config.type"
+              class="w-full border p-2 rounded bg-slate-100"
+            >
+              <option value="bar">Histogramme</option>
+              <option value="line">Courbe</option>
+            </select>
+          </section>
+          <section class="bg-white p-4 rounded-lg shadow-sm space-y-3">
+            <h2 class="font-semibold">3. Gestion de projet</h2>
+            <div class="grid grid-cols-2 gap-2">
+              <button
+                @click="newProject"
+                class="col-span-2 bg-slate-200 hover:bg-slate-300 py-2 rounded text-sm font-bold"
+              >
+                + Nouveau
+              </button>
+              <button
+                @click="triggerOpenFile"
+                class="bg-blue-50 hover:bg-blue-100 text-blue-700 py-2 rounded text-xs font-bold border border-blue-200"
+              >
+                📂 Ouvrir
+              </button>
+              <button
+                @click="saveProject"
+                class="bg-green-50 hover:bg-green-100 text-green-700 py-2 rounded text-xs font-bold border border-green-200"
+              >
+                💾 Enregistrer
+              </button>
+            </div>
+            <input
+              type="file"
+              ref="fileInput"
+              @change="openProject"
+              style="display: none"
+              accept=".json"
+            />
+          </section>
+          <div class="space-y-2">
+            <button
+              @click="exportPDF"
+              class="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700"
+            >
+              Exporter PDF (Vectoriel)
+            </button>
+            <button
+              @click="generateIframe"
+              class="w-full bg-slate-800 text-white py-2 rounded-lg hover:bg-black"
+            >
+              Copier le code Iframe
+            </button>
+          </div>
+        </aside>
+
+        <main class="col-span-8">
+          <div
+            class="bg-white p-4 rounded-xl shadow-lg border border-slate-200"
+            id="capture-zone"
+          >
+            <div id="chart-container"></div>
+
+            <p
+              class="text-xs italic text-slate-400 mt-4 roboto"
+              v-if="config.source"
+            >
+              Source : {{config.source}}
+            </p>
+          </div>
+        </main>
+      </div>
+
+      <transition name="fade">
+        <div
+          v-if="isTextSelected"
+          class="fixed bottom-10 right-10 bg-black/90 text-white p-4 rounded-xl shadow-2xl backdrop-blur-sm flex flex-col gap-3 z-50"
+        >
+          <div
+            class="flex items-center gap-2 border-b border-slate-700 pb-2 mb-1"
+          >
+            <input
+              type="checkbox"
+              id="applyAll"
+              v-model="applyToSerie"
+              class="w-4 h-4 accent-blue-500"
+            />
+            <label
+              for="applyAll"
+              class="text-[10px] font-bold uppercase text-blue-400 cursor-pointer"
+              >Appliquer à toute la série</label
+            >
+
+            <button
+              @click="actions.undo()"
+              :disabled="history.length <= 1"
+              class="ml-auto text-[10px] bg-orange-600/20 text-orange-400 px-2 py-0.5 rounded border border-orange-500/30 hover:bg-orange-600/40 disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              ↩ Annuler
+            </button>
+          </div>
+
+          <div class="flex items-center gap-3">
+            <span class="text-[10px] font-bold uppercase text-slate-400"
+              >Style</span
+            >
+
+            <select
+              @change="actions.setSize($event.target.value, applyToSerie)"
+              class="bg-slate-700 text-white text-xs border border-slate-500 rounded px-1 py-1 outline-none"
+            >
+              <option
+                v-for="size in [8, 10, 12, 14, 16, 20, 24, 32]"
+                :value="size"
+                :selected="size === 12"
+              >
+                {{size}}
+              </option>
+            </select>
+
+            <div class="h-6 w-px bg-slate-600"></div>
+
+            <button
+              @click="actions.bold(applyToSerie)"
+              class="px-3 py-1 bg-slate-700 rounded hover:bg-slate-600 font-bold border border-slate-500 text-xs"
+            >
+              G
+            </button>
+            <button
+              @click="actions.italic(applyToSerie)"
+              class="px-3 py-1 bg-slate-700 rounded hover:bg-slate-600 italic border border-slate-500 text-xs"
+            >
+              I
+            </button>
+
+            <div class="h-6 w-px bg-slate-600"></div>
+
+            <div class="flex items-center gap-2">
+              <input
+                type="color"
+                @input="actions.setBg($event.target.value, applyToSerie)"
+                class="w-6 h-6 bg-transparent cursor-pointer border-none"
+              />
+              <button
+                @click="actions.outline(applyToSerie)"
+                class="px-2 py-1 bg-slate-700 rounded border border-slate-500 text-lg leading-none"
+              >
+                ▢
+              </button>
+            </div>
+
+            <div class="h-6 w-px bg-slate-600"></div>
+
+            <button
+              @click="actions.delete()"
+              class="p-2 bg-red-600 rounded hover:bg-red-700 text-white"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      </transition>
+    </div>
+
+    <script src="js/charts.js"></script>
+    <script src="js/app.js"></script>
+  </body>
+</html>
