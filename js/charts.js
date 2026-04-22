@@ -44,18 +44,18 @@ const ChartModule = {
 
     const width = 800,
       height = 500;
-    const margin = { top: 70, right: 40, bottom: 60, left: 100 }; // Top augmenté pour le titre
+    const margin = { top: 70, right: 40, bottom: 60, left: 100 };
     const innerW = width - margin.left - margin.right,
       innerH = height - margin.top - margin.bottom;
 
-    // Groupe pour le contenu du graphique (Axes + Data)
     const g = svg
       .append("g")
       .attr("transform", `translate(${margin.left},${margin.top})`);
 
-    // --- CONFIGURATION ---
     const isHoriz = config.type === "horizontalBar";
     const isBar = config.type === "bar" || isHoriz;
+    const modeKey = isBar ? (isHoriz ? "hBar" : "vBar") : "line"; // Clé pour la mémoire de position
+
     const xLabels = data.map((d, i) => (mapping.x ? d[mapping.x] : i + 1));
     const maxY = d3.max(data, (d) => d3.max(mapping.yKeys, (k) => d[k] || 0));
 
@@ -88,7 +88,6 @@ const ChartModule = {
         : null;
     }
 
-    // Axes
     g.append("g")
       .attr("transform", `translate(0,${innerH})`)
       .call(d3.axisBottom(xScale));
@@ -105,13 +104,20 @@ const ChartModule = {
           ox = +node.attr("data-origin-x"),
           oy = +node.attr("data-origin-y");
         node.attr("transform", `translate(${event.x},${event.y})`);
-        this.storeStyle(id, "offset", { x: event.x - ox, y: event.y - oy });
+
+        // On enregistre l'offset spécifiquement pour le mode actuel (line, vBar ou hBar)
+        if (!this.persistentStyles[id]) this.persistentStyles[id] = {};
+        if (!this.persistentStyles[id].offsets)
+          this.persistentStyles[id].offsets = {};
+        this.persistentStyles[id].offsets[modeKey] = {
+          x: event.x - ox,
+          y: event.y - oy,
+        };
       })
       .on("end", () => {
         if (window.appInstance) window.appInstance.saveState();
       });
 
-    // --- RENDU DES SÉRIES ---
     mapping.yKeys.forEach((key, index) => {
       const color = this.colors[index % this.colors.length];
       if (!isBar) {
@@ -163,8 +169,19 @@ const ChartModule = {
 
         const id = `p-${index}-${i}`,
           style = this.persistentStyles[id] || {};
-        const off =
-          style.offset || (isHoriz ? { x: 25, y: 0 } : { x: 0, y: -25 });
+
+        // RÉCUPÉRATION DE L'OFFSET PAR MODE
+        // On cherche d'abord si un offset existe pour ce mode précis
+        let off =
+          style.offsets && style.offsets[modeKey]
+            ? style.offsets[modeKey]
+            : null;
+
+        // Si aucun offset manuel, on met la position par défaut selon le mode
+        if (!off) {
+          off = isHoriz ? { x: 25, y: 0 } : { x: 0, y: -25 };
+        }
+
         if (!style.deleted) {
           this.addInteractiveText(
             g,
@@ -186,10 +203,14 @@ const ChartModule = {
       });
     });
 
-    // --- TITRE (ANCRÉ AU SVG DIRECTEMENT) ---
-    // x=400 (milieu de 800), y=30 (haut du graphique)
-    const tStyle = this.persistentStyles["main-title"] || {},
-      tOff = tStyle.offset || { x: 0, y: 0 };
+    // TITRE
+    const tStyle = this.persistentStyles["main-title"] || {};
+    // Le titre garde un offset universel car sa position ne dépend pas du type de graph
+    const tOff =
+      tStyle.offsets && tStyle.offsets.universal
+        ? tStyle.offsets.universal
+        : tStyle.offset || { x: 0, y: 0 };
+
     this.addInteractiveText(
       svg,
       400 + tOff.x,
@@ -210,6 +231,27 @@ const ChartModule = {
 
     this.renderLegend(svg, width, margin, mapping, drag);
     this.applyAllStyles();
+  },
+
+  // Modification pour le titre qui doit rester au même endroit
+  storeStyle(id, prop, val) {
+    if (!this.persistentStyles[id]) this.persistentStyles[id] = {};
+    if (prop === "offset") {
+      if (!this.persistentStyles[id].offsets)
+        this.persistentStyles[id].offsets = {};
+      // Si c'est le titre, on utilise une clé universelle
+      const key =
+        id === "main-title"
+          ? "universal"
+          : this.lastRenderedType === "horizontalBar"
+            ? "hBar"
+            : this.lastRenderedType === "bar"
+              ? "vBar"
+              : "line";
+      this.persistentStyles[id].offsets[key] = val;
+    } else {
+      this.persistentStyles[id][prop] = val;
+    }
   },
 
   addInteractiveText(
@@ -277,11 +319,6 @@ const ChartModule = {
         ? "#000"
         : this.getContrastColor(f),
     );
-  },
-
-  storeStyle(id, prop, val) {
-    if (!this.persistentStyles[id]) this.persistentStyles[id] = {};
-    this.persistentStyles[id][prop] = val;
   },
 
   applyAllStyles() {
@@ -447,8 +484,14 @@ const ChartModule = {
         .attr("width", 12)
         .attr("height", 12)
         .attr("fill", color);
-      const s = this.persistentStyles[id] || {},
-        off = s.offset || { x: 0, y: 0 };
+
+      const s = this.persistentStyles[id] || {};
+      // Pour la légende, on utilise aussi un offset universel (ne dépend pas du type de graph)
+      const off =
+        s.offsets && s.offsets.universal
+          ? s.offsets.universal
+          : s.offset || { x: 0, y: 0 };
+
       this.addInteractiveText(
         item,
         20 + off.x,
