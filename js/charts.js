@@ -502,8 +502,15 @@ const ChartModule = {
       }
       const txt = g.select("text"),
         rct = g.select("rect");
+
       if (s.fill) rct.attr("fill", s.fill);
-      if (s.stroke) rct.attr("stroke", s.stroke);
+      if (s.stroke) {
+        rct.attr("stroke", s.stroke);
+        rct.attr(
+          "stroke-width",
+          s.stroke === "transparent" || s.stroke === "none" ? "0" : "1.5px",
+        );
+      }
       if (s.fontSize) txt.style("font-size", s.fontSize);
       if (s.fontWeight) txt.style("font-weight", s.fontWeight);
       if (s.fontStyle) txt.style("font-style", s.fontStyle);
@@ -539,10 +546,47 @@ const ChartModule = {
 
   setBgColor(c, all) {
     const fn = (g) => {
-      g.select("rect").attr("fill", c).attr("stroke", "none");
-      this.storeStyle(g.attr("data-id"), "fill", c);
+      const r = g.select("rect");
+      let targetColor = c;
+      const id = g.attr("data-id");
+
+      // Si on clique sur le bouton "Transparent" (🚫)
+      if (c === "transparent" || c === "none") {
+        const currentFill = r.attr("fill");
+        const currentStroke = r.attr("stroke");
+
+        // Si l'élément est DÉJÀ transparent (fond et contour), on le remet à son état initial
+        if (
+          (currentFill === "transparent" || currentFill === "none") &&
+          (currentStroke === "transparent" || currentStroke === "none")
+        ) {
+          // L'état initial d'une bulle de valeur (commence par "p-") est sa couleur de série
+          if (id && id.startsWith("p-")) {
+            const serieId = g.attr("data-serie");
+            const idx = parseInt(serieId);
+            if (!isNaN(idx)) {
+              targetColor = this.colors[idx % this.colors.length];
+            }
+          } else {
+            // L'état initial d'une légende, d'un axe ou d'un titre est transparent
+            targetColor = "transparent";
+          }
+        }
+
+        // On supprime les éventuels contours pour revenir à un état parfaitement propre
+        r.attr("stroke", "none").attr("stroke-width", "0");
+        this.storeStyle(id, "stroke", "none");
+      } else {
+        // Si on choisit une vraie couleur (ex: bleu), on enlève le contour pour un rendu net
+        r.attr("stroke", "none").attr("stroke-width", "0");
+        this.storeStyle(id, "stroke", "none");
+      }
+
+      r.attr("fill", targetColor);
+      this.storeStyle(id, "fill", targetColor);
       this.updateCartouche(g);
     };
+
     all ? this.applyToSerie(fn) : this.selectedText && fn(this.selectedText);
     if (window.appInstance) window.appInstance.saveState();
   },
@@ -581,21 +625,44 @@ const ChartModule = {
   toggleOutline(all) {
     const fn = (g) => {
       const r = g.select("rect"),
-        f = r.attr("fill");
-      if (f !== "transparent") {
+        f = r.attr("fill"),
+        s = r.attr("stroke");
+
+      if (f && f !== "transparent" && f !== "none") {
+        // 1. S'il a un fond coloré -> Il devient un contour de la même couleur
         r.attr("stroke", f)
           .attr("fill", "transparent")
           .attr("stroke-width", "1.5px");
         this.storeStyle(g.attr("data-id"), "stroke", f);
         this.storeStyle(g.attr("data-id"), "fill", "transparent");
+      } else if (s && s !== "transparent" && s !== "none") {
+        // 2. S'il a déjà un contour coloré -> Il redevient un fond solide
+        r.attr("fill", s)
+          .attr("stroke", "transparent")
+          .attr("stroke-width", "0");
+        this.storeStyle(g.attr("data-id"), "fill", s);
+        this.storeStyle(g.attr("data-id"), "stroke", "transparent");
       } else {
-        const s = r.attr("stroke");
-        r.attr("fill", s || "#000").attr("stroke", "none");
-        this.storeStyle(g.attr("data-id"), "fill", s || "#000");
-        this.storeStyle(g.attr("data-id"), "stroke", "none");
+        // 3. S'il est 100% transparent (comme la légende) -> On ajoute un contour !
+        let newColor = "#333333";
+        const serieId = g.attr("data-serie");
+
+        // Petite magie : on récupère la couleur de la courbe correspondante
+        if (serieId && serieId !== "title" && serieId !== "axis") {
+          const idx = parseInt(serieId);
+          if (!isNaN(idx)) newColor = this.colors[idx % this.colors.length];
+        }
+
+        r.attr("stroke", newColor)
+          .attr("fill", "transparent")
+          .attr("stroke-width", "1.5px");
+        this.storeStyle(g.attr("data-id"), "stroke", newColor);
+        this.storeStyle(g.attr("data-id"), "fill", "transparent");
       }
+
       this.updateCartouche(g);
     };
+
     all ? this.applyToSerie(fn) : this.selectedText && fn(this.selectedText);
     if (window.appInstance) window.appInstance.saveState();
   },
@@ -622,10 +689,22 @@ const ChartModule = {
   },
   applyToSerie(cb) {
     if (!this.selectedText) return;
+
     const sId = this.selectedText.attr("data-serie");
+
+    // On isole le début de l'ID pour savoir si on a cliqué sur un point ("p-...") ou une légende ("leg-...")
+    const selectedPrefix = this.selectedText.attr("data-id").split("-")[0];
+
     d3.selectAll(`.editable-group[data-serie='${sId}']`).each(function () {
-      cb(d3.select(this));
+      const g = d3.select(this);
+
+      // On n'applique la modification QUE si c'est le même type d'élément
+      // (ex: si on a cliqué sur une bulle, on ne modifie que les bulles, on ignore la légende)
+      if (g.attr("data-id").startsWith(selectedPrefix)) {
+        cb(g);
+      }
     });
+
     if (window.appInstance) window.appInstance.saveState();
   },
 };
