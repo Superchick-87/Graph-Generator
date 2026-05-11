@@ -101,10 +101,15 @@ const app = createApp({
     };
 
     const parseData = (val) => {
-      if (isUndoing.value || !val || !val.trim()) {
+      // Si on est en train de charger un projet ou d'annuler, on bloque l'analyse sans vider les données
+      if (isUndoing.value) return;
+
+      // Si le champ est vide, on vide le tableau
+      if (!val || !val.trim()) {
         items.value = [];
         return;
       }
+
       const rows = val.trim().split("\n");
       const heads = rows[0].split("\t").map((h) => h.trim());
       const dataRows = rows.slice(1);
@@ -240,12 +245,14 @@ const app = createApp({
           try {
             const data = JSON.parse(e.target.result);
             isUndoing.value = true;
+
             ChartModule.persistentStyles = data.styles || {};
             ChartModule.legendPos = data.legendPos || { x: null, y: null };
             config.value = data.config;
             mapping.value = data.mapping;
             rawInput.value = data.rawInput;
             items.value = data.items;
+
             nextTick(() => {
               ChartModule.render(
                 "#chart-container",
@@ -259,7 +266,10 @@ const app = createApp({
               }, 100);
             });
           } catch (err) {
-            alert("Erreur.");
+            alert("Erreur lors de la lecture du fichier.");
+          } finally {
+            // LIGNE IMPORTANTE : Réinitialise l'input pour pouvoir rouvrir le même fichier plus tard
+            event.target.value = "";
           }
         };
         reader.readAsText(file);

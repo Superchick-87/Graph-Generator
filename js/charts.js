@@ -263,9 +263,7 @@ const ChartModule = {
           let offVal =
             sVal.offsets?.[modeKey] ||
             (isHoriz ? { x: 35, y: 0 } : { x: 0, y: defaultYOffset });
-          let offTxt =
-            sTxt.offsets?.[modeKey] ||
-            (isHoriz ? { x: -20, y: 0 } : { x: 0, y: 30 });
+          let offTxt = sTxt.offsets?.[modeKey] || { x: 0, y: 0 };
 
           if (!sVal.deleted) {
             this.addInteractiveText(
@@ -289,11 +287,13 @@ const ChartModule = {
             let labelX, labelY;
 
             if (isHoriz) {
-              labelX = -20;
+              // Rapproché à gauche : -10px au lieu de -20px
+              labelX = -10;
               labelY = yScale(xLabels[i]) + yScale.bandwidth() / 2;
             } else {
               labelX = xScale(xLabels[i]) + xScale.bandwidth() / 2;
-              labelY = innerH + 30;
+              // Rapproché en bas : +15px au lieu de +30px
+              labelY = innerH + 15;
             }
 
             const grp = this.addInteractiveText(
@@ -382,17 +382,17 @@ const ChartModule = {
 
       this.addInteractiveText(
         item,
-        20 + off.x, // <-- Modifié : 20 au lieu de 25 pour le rapprocher
+        20 + off.x,
         0 + off.y,
         s.text || key,
-        "text-sm italic font-light", // <-- Modifié : italic et font-light par défaut
+        "text-sm italic font-light",
         false,
         drag,
         "#000",
         "transparent",
         index,
         idLeg,
-        20, // <-- Modifié l'origine X correspondante
+        20,
         0,
       );
     });
