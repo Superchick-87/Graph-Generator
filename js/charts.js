@@ -43,8 +43,8 @@ const ChartModule = {
     svg.selectAll("*").remove();
 
     const width = 800,
-      height = 500,
-      margin = { top: 70, right: 40, bottom: 60, left: 100 };
+      height = 500;
+    const margin = { top: 70, right: 60, bottom: 80, left: 160 };
     const innerW = width - margin.left - margin.right,
       innerH = height - margin.top - margin.bottom;
     const g = svg
@@ -67,15 +67,7 @@ const ChartModule = {
           ox = +node.attr("data-origin-x"),
           oy = +node.attr("data-origin-y");
         node.attr("transform", `translate(${event.x},${event.y})`);
-        if (!this.persistentStyles[id]) this.persistentStyles[id] = {};
-        if (!this.persistentStyles[id].offsets)
-          this.persistentStyles[id].offsets = {};
-        const key =
-          id === "main-title" || id.startsWith("leg") ? "universal" : modeKey;
-        this.persistentStyles[id].offsets[key] = {
-          x: event.x - ox,
-          y: event.y - oy,
-        };
+        this.storeStyle(id, "offset", { x: event.x - ox, y: event.y - oy });
       })
       .on("end", () => {
         if (window.appInstance) window.appInstance.saveState();
@@ -94,9 +86,8 @@ const ChartModule = {
       const arc = d3.arc().innerRadius(0).outerRadius(radius);
       const labelArc = d3
         .arc()
-        .innerRadius(radius * 0.7)
-        .outerRadius(radius * 0.7);
-
+        .innerRadius(radius * 0.75)
+        .outerRadius(radius * 0.75);
       const arcs = pieG
         .selectAll(".arc")
         .data(pie(pieData))
@@ -110,27 +101,20 @@ const ChartModule = {
         .attr("stroke", "white")
         .style("stroke-width", "2px")
         .attr("opacity", 0.8);
-
       arcs.each((d, i) => {
         const center = labelArc.centroid(d);
         const idVal = `p-${i}-0-val`,
           idTxt = `p-${i}-0-txt`;
         const sVal = this.persistentStyles[idVal] || {},
           sTxt = this.persistentStyles[idTxt] || {};
-        const offVal =
-          sVal.offsets && sVal.offsets.pie
-            ? sVal.offsets.pie
-            : { x: 0, y: -10 };
-        const offTxt =
-          sTxt.offsets && sTxt.offsets.pie ? sTxt.offsets.pie : { x: 0, y: 10 };
-
-        if (!sVal.deleted) {
-          const valLabel = sVal.text || d.data.value;
+        const offVal = sVal.offsets?.[modeKey] || { x: 0, y: -10 },
+          offTxt = sTxt.offsets?.[modeKey] || { x: 0, y: 12 };
+        if (!sVal.deleted)
           this.addInteractiveText(
             pieG,
             center[0] + offVal.x,
             center[1] + offVal.y,
-            valLabel,
+            sVal.text || d.data.value,
             "font-bold",
             true,
             drag,
@@ -138,18 +122,15 @@ const ChartModule = {
             sVal.fill || this.colors[i % this.colors.length],
             i,
             idVal,
+            center[0],
+            center[1],
           );
-          d3.select(`[data-id='${idVal}']`)
-            .attr("data-origin-x", center[0])
-            .attr("data-origin-y", center[1]);
-        }
-        if (!config.showPieLegend && !sTxt.deleted) {
-          const txtLabel = sTxt.text || d.data.key;
+        if (!config.showPieLegend && !sTxt.deleted)
           this.addInteractiveText(
             pieG,
             center[0] + offTxt.x,
             center[1] + offTxt.y,
-            txtLabel,
+            sTxt.text || d.data.key,
             "text-[10px]",
             true,
             drag,
@@ -157,16 +138,15 @@ const ChartModule = {
             sTxt.fill || this.colors[i % this.colors.length],
             i,
             idTxt,
+            center[0],
+            center[1],
           );
-          d3.select(`[data-id='${idTxt}']`)
-            .attr("data-origin-x", center[0])
-            .attr("data-origin-y", center[1]);
-        }
       });
     } else {
-      const xLabels = data.map((d, i) => (mapping.x ? d[mapping.x] : i + 1)),
-        maxY = d3.max(data, (d) => d3.max(mapping.yKeys, (k) => d[k] || 0));
-      let xScale, yScale, xSub, ySub;
+      const xLabels = data.map((d, i) => (mapping.x ? d[mapping.x] : i + 1));
+      const maxY = d3.max(data, (d) => d3.max(mapping.yKeys, (k) => d[k] || 0));
+      let xScale, yScale, ySub, xSub;
+
       if (isHoriz) {
         yScale = d3.scaleBand().range([0, innerH]).padding(0.3).domain(xLabels);
         xScale = d3
@@ -178,7 +158,7 @@ const ChartModule = {
           .scaleBand()
           .domain(mapping.yKeys)
           .range([0, yScale.bandwidth()])
-          .padding(0.05);
+          .padding(0.1);
       } else {
         xScale = d3.scaleBand().range([0, innerW]).padding(0.3).domain(xLabels);
         yScale = d3
@@ -191,17 +171,65 @@ const ChartModule = {
               .scaleBand()
               .domain(mapping.yKeys)
               .range([0, xScale.bandwidth()])
-              .padding(0.05)
+              .padding(0.1)
           : null;
       }
-      g.append("g")
-        .attr("transform", `translate(0,${innerH})`)
-        .call(d3.axisBottom(xScale));
-      g.append("g").call(d3.axisLeft(yScale));
+
+      if (config.showGrid) {
+        const gridG = g.append("g").attr("class", "grid");
+        if (isHoriz)
+          gridG
+            .attr("transform", `translate(0,${innerH})`)
+            .call(d3.axisBottom(xScale).tickSize(-innerH).tickFormat(""));
+        else gridG.call(d3.axisLeft(yScale).tickSize(-innerW).tickFormat(""));
+        gridG
+          .selectAll("line")
+          .attr("stroke", "#e2e8f0")
+          .attr("stroke-dasharray", "2,2");
+        gridG.select("path").remove();
+      }
+
+      // CORRECTION: AFFICHAGE DES DONNÉES DES AXES NUMÉRIQUES
+      if (isHoriz) {
+        // Horizontale : Les nombres sont sur X, les étiquettes personnalisées sur Y
+        g.append("g")
+          .attr("transform", `translate(0,${innerH})`)
+          .call(d3.axisBottom(xScale)); // Affiche les nombres
+        g.append("g").call(d3.axisLeft(yScale).tickFormat("")); // Masque les étiquettes par défaut
+      } else {
+        // Verticale/Ligne : Les étiquettes perso sont sur X, les nombres sur Y
+        g.append("g")
+          .attr("transform", `translate(0,${innerH})`)
+          .call(d3.axisBottom(xScale).tickFormat("")); // Masque les étiquettes par défaut
+        g.append("g").call(d3.axisLeft(yScale)); // Affiche les nombres (données manquantes corrigées)
+      }
 
       mapping.yKeys.forEach((key, index) => {
         const color = this.colors[index % this.colors.length];
-        if (!isBar) {
+
+        if (isHoriz) {
+          g.selectAll(`.bar-${index}`)
+            .data(data)
+            .enter()
+            .append("rect")
+            .attr("y", (d, i) => yScale(xLabels[i]) + ySub(key))
+            .attr("x", 0)
+            .attr("height", ySub.bandwidth())
+            .attr("width", (d) => xScale(d[key] || 0))
+            .attr("fill", color)
+            .attr("opacity", 0.8);
+        } else if (isBar) {
+          g.selectAll(`.bar-${index}`)
+            .data(data)
+            .enter()
+            .append("rect")
+            .attr("x", (d, i) => xScale(xLabels[i]) + xSub(key))
+            .attr("y", (d) => yScale(d[key] || 0))
+            .attr("width", xSub.bandwidth())
+            .attr("height", (d) => innerH - yScale(d[key] || 0))
+            .attr("fill", color)
+            .attr("opacity", 0.8);
+        } else {
           const lineGen = d3
             .line()
             .x((d, i) => xScale(xLabels[i]) + xScale.bandwidth() / 2)
@@ -212,29 +240,8 @@ const ChartModule = {
             .attr("stroke", color)
             .attr("stroke-width", 3)
             .attr("d", lineGen);
-        } else if (isHoriz) {
-          g.selectAll(`.bar-${index}`)
-            .data(data)
-            .enter()
-            .append("rect")
-            .attr("y", (d, i) => yScale(xLabels[i]) + ySub(key))
-            .attr("x", 0)
-            .attr("height", ySub.bandwidth())
-            .attr("width", (d) => xScale(d[key] || 0))
-            .attr("fill", color)
-            .attr("opacity", 0.7);
-        } else {
-          g.selectAll(`.bar-${index}`)
-            .data(data)
-            .enter()
-            .append("rect")
-            .attr("x", (d, i) => xScale(xLabels[i]) + xSub(key))
-            .attr("y", (d) => yScale(d[key] || 0))
-            .attr("width", xSub.bandwidth())
-            .attr("height", (d) => innerH - yScale(d[key] || 0))
-            .attr("fill", color)
-            .attr("opacity", 0.7);
         }
+
         data.forEach((d, i) => {
           let cx, cy;
           if (isHoriz) {
@@ -248,41 +255,74 @@ const ChartModule = {
                 : xScale.bandwidth() / 2);
             cy = yScale(d[key] || 0);
           }
-          const id = `p-${index}-${i}-val`,
-            style = this.persistentStyles[id] || {};
-          let off =
-            style.offsets && style.offsets[modeKey]
-              ? style.offsets[modeKey]
-              : isHoriz
-                ? { x: 25, y: 0 }
-                : { x: 0, y: -25 };
-          if (!style.deleted) {
+
+          const idVal = `p-${index}-${i}-val`;
+          const idTxt = `axis-label-${i}`;
+
+          const sVal = this.persistentStyles[idVal] || {};
+          const sTxt = this.persistentStyles[idTxt] || {};
+
+          let defaultYOffset = isHoriz ? 0 : -20;
+          let offVal =
+            sVal.offsets?.[modeKey] ||
+            (isHoriz ? { x: 35, y: 0 } : { x: 0, y: defaultYOffset });
+          let offTxt = sTxt.offsets?.[modeKey] || { x: 0, y: 0 };
+
+          // Ajout du badge de la valeur
+          if (!sVal.deleted) {
             this.addInteractiveText(
               g,
-              cx + off.x,
-              cy + off.y,
-              style.text || d[key],
+              cx + offVal.x,
+              cy + offVal.y,
+              sVal.text || d[key],
               "font-bold",
               true,
               drag,
               null,
-              style.fill || color,
+              sVal.fill || color,
               index,
-              id,
+              idVal,
+              cx,
+              cy,
             );
-            d3.select(`[data-id='${id}']`)
-              .attr("data-origin-x", cx)
-              .attr("data-origin-y", cy);
+          }
+
+          // CORRECTION: PLACEMENT DES LÉGENDES DE CATÉGORIE (AXE X/Y)
+          if (index === 0 && !sTxt.deleted) {
+            let labelX, labelY;
+
+            if (isHoriz) {
+              labelX = -20; // Décalé à gauche pour les graphes horizontaux
+              labelY = yScale(xLabels[i]) + yScale.bandwidth() / 2;
+            } else {
+              labelX = xScale(xLabels[i]) + xScale.bandwidth() / 2; // Aligné sous la valeur X correspondante
+              labelY = innerH + 30; // 30 pixels sous la ligne de l'axe X
+            }
+
+            const grp = this.addInteractiveText(
+              g,
+              labelX + offTxt.x,
+              labelY + offTxt.y,
+              sTxt.text || xLabels[i],
+              "text-[12px] font-bold uppercase",
+              !isHoriz,
+              drag,
+              "#000",
+              "transparent",
+              "axis",
+              idTxt,
+              labelX,
+              labelY,
+            );
+
+            if (isHoriz) grp.select("text").attr("text-anchor", "end");
           }
         });
       });
     }
 
     const tStyle = this.persistentStyles["main-title"] || {},
-      tOff =
-        tStyle.offsets && tStyle.offsets.universal
-          ? tStyle.offsets.universal
-          : { x: 0, y: 0 };
+      tOff = tStyle.offsets?.universal || { x: 0, y: 0 };
     this.addInteractiveText(
       svg,
       400 + tOff.x,
@@ -295,22 +335,23 @@ const ChartModule = {
       "transparent",
       "title",
       "main-title",
+      400,
+      30,
     );
-    svg
-      .select("[data-id='main-title']")
-      .attr("data-origin-x", 400)
-      .attr("data-origin-y", 30);
     this.renderLegend(svg, width, margin, mapping, drag, config);
     this.applyAllStyles();
   },
 
   renderLegend(svg, width, margin, mapping, drag, config) {
-    if (config.type === "pie" && !config.showPieLegend) {
+    if (
+      (mapping.yKeys.length === 1 && config.type !== "pie") ||
+      (config.type === "pie" && !config.showPieLegend)
+    ) {
       svg.selectAll(".legend-container").remove();
       return;
     }
-    const lx = this.legendPos.x || width - 150,
-      ly = this.legendPos.y || 60;
+    const lx = this.legendPos.x || width - 120,
+      ly = this.legendPos.y || 70;
     const leg = svg
       .append("g")
       .attr("class", "legend-container")
@@ -324,32 +365,35 @@ const ChartModule = {
           );
         }),
       );
+
     mapping.yKeys.forEach((key, index) => {
       const item = leg
-          .append("g")
-          .attr("transform", `translate(0, ${index * 25})`),
-        color = this.colors[index % this.colors.length],
-        id = `leg-${index}`,
-        s = this.persistentStyles[id] || {};
+        .append("g")
+        .attr("transform", `translate(0, ${index * 35})`);
+      const color = this.colors[index % this.colors.length];
+      const idLeg = `leg-${index}`,
+        s = this.persistentStyles[idLeg] || {},
+        off = s.offsets?.universal || { x: 0, y: 0 };
       item
         .append("rect")
-        .attr("width", 12)
-        .attr("height", 12)
-        .attr("fill", color);
-      const off =
-        s.offsets && s.offsets.universal ? s.offsets.universal : { x: 0, y: 0 };
+        .attr("width", 15)
+        .attr("height", 15)
+        .attr("fill", color)
+        .attr("y", -7.5);
       this.addInteractiveText(
         item,
-        20 + off.x,
-        10 + off.y,
+        25 + off.x,
+        0 + off.y,
         s.text || key,
-        "font-bold",
+        "text-sm font-bold",
         false,
         drag,
-        null,
+        "#000",
         "transparent",
-        id,
-        id,
+        index,
+        idLeg,
+        25,
+        0,
       );
     });
   },
@@ -366,12 +410,16 @@ const ChartModule = {
     bgColor,
     serieId,
     uniqueId,
+    ox,
+    oy,
   ) {
     const group = container
       .append("g")
       .attr("class", "editable-group")
       .attr("data-serie", serieId)
       .attr("data-id", uniqueId)
+      .attr("data-origin-x", ox)
+      .attr("data-origin-y", oy)
       .attr("transform", `translate(${x},${y})`);
     if (drag) group.call(drag).style("cursor", "move");
     group
@@ -382,8 +430,9 @@ const ChartModule = {
     group
       .append("text")
       .attr("text-anchor", centered ? "middle" : "start")
+      .attr("alignment-baseline", "central")
       .attr("class", classes)
-      .style("font-size", "12px")
+      .style("font-size", "14px")
       .text(text);
     this.updateCartouche(group);
     group
@@ -395,12 +444,14 @@ const ChartModule = {
         e.stopPropagation();
         this.makeInlineEditable(group.select("text"), group);
       });
+    return group;
   },
 
   updateCartouche(group) {
     const text = group.select("text"),
-      rect = group.select("rect"),
-      bbox = text.node().getBBox(),
+      rect = group.select("rect");
+    text.attr("dy", "0.35em");
+    const bbox = text.node().getBBox(),
       p = 5;
     rect
       .attr("x", bbox.x - p)
@@ -418,7 +469,7 @@ const ChartModule = {
         this.persistentStyles[id].offsets = {};
       const type = window.appInstance.config.type;
       const key =
-        id === "main-title" || id.startsWith("leg")
+        id === "main-title" || id.startsWith("leg") || id.startsWith("axis")
           ? "universal"
           : type === "horizontalBar"
             ? "hBar"
@@ -442,11 +493,14 @@ const ChartModule = {
         g.remove();
         return;
       }
-      if (s.fill) g.select("rect").attr("fill", s.fill);
-      if (s.stroke) g.select("rect").attr("stroke", s.stroke);
-      if (s.fontSize) g.select("text").style("font-size", s.fontSize);
-      if (s.fontWeight) g.select("text").style("font-weight", s.fontWeight);
-      if (s.fontStyle) g.select("text").style("font-style", s.fontStyle);
+      const txt = g.select("text"),
+        rct = g.select("rect");
+      if (s.fill) rct.attr("fill", s.fill);
+      if (s.stroke) rct.attr("stroke", s.stroke);
+      if (s.fontSize) txt.style("font-size", s.fontSize);
+      if (s.fontWeight) txt.style("font-weight", s.fontWeight);
+      if (s.fontStyle) txt.style("font-style", s.fontStyle);
+      if (s.text) txt.text(s.text);
       this.updateCartouche(g);
     });
   },
@@ -460,7 +514,7 @@ const ChartModule = {
     input.value = d3Text.text();
     input.style.position = "absolute";
     input.style.left = matrix.e + window.scrollX + "px";
-    input.style.top = matrix.f + window.scrollY - bbox.height + "px";
+    input.style.top = matrix.f + window.scrollY - bbox.height / 2 + "px";
     document.body.appendChild(input);
     input.focus();
     const save = () => {

@@ -102,6 +102,40 @@
             />
 
             <div
+              v-if="config.type !== 'pie'"
+              class="flex items-center gap-2 mt-2 bg-slate-50 p-2 rounded border border-dashed border-slate-300"
+            >
+              <input
+                type="checkbox"
+                id="showGrid"
+                v-model="config.showGrid"
+                class="w-4 h-4 rounded text-blue-600"
+              />
+              <label
+                for="showGrid"
+                class="text-xs font-bold text-slate-600 cursor-pointer italic"
+                >Afficher la grille de fond</label
+              >
+            </div>
+
+            <div
+              v-if="config.type === 'pie'"
+              class="flex items-center gap-2 mt-2 bg-slate-50 p-2 rounded border border-dashed border-slate-300"
+            >
+              <input
+                type="checkbox"
+                id="showLegend"
+                v-model="config.showPieLegend"
+                class="w-4 h-4 rounded text-blue-600"
+              />
+              <label
+                for="showLegend"
+                class="text-xs font-bold text-blue-700 cursor-pointer"
+                >Afficher la légende</label
+              >
+            </div>
+
+            <!-- <div
               v-if="config.type === 'pie'"
               class="flex items-center gap-2 mt-2 bg-slate-50 p-2 rounded border border-dashed border-slate-300"
             >
@@ -116,7 +150,7 @@
                 class="text-xs font-bold text-slate-600 cursor-pointer text-blue-700"
                 >Afficher la légende</label
               >
-            </div>
+            </div> -->
           </section>
 
           <section

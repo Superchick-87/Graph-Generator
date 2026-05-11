@@ -10,6 +10,7 @@ const app = createApp({
       source: "",
       type: "line",
       showPieLegend: false,
+      showGrid: false,
     });
     const isTextSelected = ref(false);
     const applyToSerie = ref(false);
@@ -52,7 +53,7 @@ const app = createApp({
     );
 
     const saveState = () => {
-      if (isUndoing.value || items.value.length === 0) return;
+      if (isUndoing.value) return;
       const state = JSON.stringify({
         styles: JSON.parse(JSON.stringify(ChartModule.persistentStyles)),
         config: JSON.parse(JSON.stringify(config.value)),
@@ -75,12 +76,17 @@ const app = createApp({
       isUndoing.value = true;
       history.value.pop();
       const prevState = JSON.parse(history.value[history.value.length - 1]);
-      ChartModule.persistentStyles = prevState.styles || {};
-      ChartModule.legendPos = prevState.legendPos || { x: null, y: null };
-      config.value = prevState.config;
-      mapping.value = prevState.mapping;
-      items.value = prevState.items;
+
+      // Restauration profonde
+      ChartModule.persistentStyles = JSON.parse(
+        JSON.stringify(prevState.styles),
+      );
+      ChartModule.legendPos = JSON.parse(JSON.stringify(prevState.legendPos));
+      config.value = JSON.parse(JSON.stringify(prevState.config));
+      mapping.value = JSON.parse(JSON.stringify(prevState.mapping));
+      items.value = JSON.parse(JSON.stringify(prevState.items));
       rawInput.value = prevState.rawInput;
+
       nextTick(() => {
         ChartModule.render(
           "#chart-container",
@@ -88,9 +94,9 @@ const app = createApp({
           mapping.value,
           config.value,
         );
-        window.setTimeout(() => {
+        setTimeout(() => {
           isUndoing.value = false;
-        }, 100);
+        }, 50);
       });
     };
 
@@ -101,47 +107,50 @@ const app = createApp({
       }
       const rows = val.trim().split("\n");
       const heads = rows[0].split("\t").map((h) => h.trim());
-      const newItems = rows.slice(1).map((row) => {
-        const cols = row.split("\t");
-        return heads.reduce((acc, h, i) => {
-          const v = cols[i]?.trim().replace(",", ".");
-          acc[h] = v === "" || isNaN(v) ? v : parseFloat(v);
-          return acc;
-        }, {});
-      });
+      const dataRows = rows.slice(1);
 
-      const oldHeads = items.value.length ? Object.keys(items.value[0]) : [];
-      if (JSON.stringify(heads) !== JSON.stringify(oldHeads)) {
-        items.value = newItems;
-        history.value = [];
-        ChartModule.persistentStyles = {};
-        ChartModule.legendPos = { x: null, y: null };
-        if (config.value.type === "pie") {
-          mapping.value.x = null;
-          mapping.value.yKeys = heads;
-        } else {
-          mapping.value.x = heads[0];
-          mapping.value.yKeys = heads.slice(1);
-        }
+      if (dataRows.length === 1 && config.value.type !== "pie") {
+        const cols = dataRows[0].split("\t");
+        items.value = heads.map((h, i) => ({
+          category: h,
+          valeur: parseFloat(cols[i]?.trim().replace(",", ".")) || 0,
+        }));
+        mapping.value.x = "category";
+        mapping.value.yKeys = ["valeur"];
       } else {
-        items.value = newItems;
+        items.value = dataRows.map((row) => {
+          const cols = row.split("\t");
+          return heads.reduce((acc, h, i) => {
+            const v = cols[i]?.trim().replace(",", ".");
+            acc[h] = v === "" || isNaN(v) ? v : parseFloat(v);
+            return acc;
+          }, {});
+        });
+        if (heads.length > 0) {
+          if (config.value.type === "pie") {
+            mapping.value.x = null;
+            mapping.value.yKeys = heads;
+          } else {
+            mapping.value.x = heads[0];
+            mapping.value.yKeys = heads.slice(1);
+          }
+        }
       }
     };
 
-    watch(rawInput, (nv) => {
-      parseData(nv);
-    });
+    watch(rawInput, (nv) => parseData(nv));
     watch(
       [items, mapping, config],
       () => {
-        if (isUndoing.value) return;
-        saveState();
-        ChartModule.render(
-          "#chart-container",
-          items.value,
-          mapping.value,
-          config.value,
-        );
+        if (!isUndoing.value) {
+          saveState();
+          ChartModule.render(
+            "#chart-container",
+            items.value,
+            mapping.value,
+            config.value,
+          );
+        }
       },
       { deep: true },
     );
@@ -171,28 +180,28 @@ const app = createApp({
       ),
       actions: {
         setSize: (s, a) => {
-          saveState();
           ChartModule.setFontSize(s, a);
+          saveState();
         },
         bold: (a) => {
-          saveState();
           ChartModule.toggleBold(a);
+          saveState();
         },
         italic: (a) => {
-          saveState();
           ChartModule.toggleItalic(a);
+          saveState();
         },
         setBg: (c, a) => {
-          saveState();
           ChartModule.setBgColor(c, a);
+          saveState();
         },
         outline: (a) => {
-          saveState();
           ChartModule.toggleOutline(a);
+          saveState();
         },
         delete: () => {
-          saveState();
           ChartModule.deleteText();
+          saveState();
         },
         undo: () => undo(),
       },
@@ -244,10 +253,10 @@ const app = createApp({
                 mapping.value,
                 config.value,
               );
-              window.setTimeout(() => {
+              setTimeout(() => {
                 isUndoing.value = false;
                 saveState();
-              }, 200);
+              }, 100);
             });
           } catch (err) {
             alert("Erreur.");
@@ -255,10 +264,8 @@ const app = createApp({
         };
         reader.readAsText(file);
       },
-      saveState,
     };
   },
 });
-
 const vm = app.mount("#app");
 window.appInstance = vm;
