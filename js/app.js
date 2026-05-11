@@ -244,14 +244,28 @@ const app = createApp({
         reader.onload = (e) => {
           try {
             const data = JSON.parse(e.target.result);
-            isUndoing.value = true;
 
+            // 1. On mémorise le type actuellement sélectionné dans le menu
+            const typeChoisi = config.value.type;
+
+            isUndoing.value = true;
             ChartModule.persistentStyles = data.styles || {};
             ChartModule.legendPos = data.legendPos || { x: null, y: null };
-            config.value = data.config;
-            mapping.value = data.mapping;
+
+            // 2. On charge la configuration du fichier
+            Object.assign(config.value, data.config);
+
+            // 3. On écrase le type du fichier par le type choisi avant l'ouverture
+            config.value.type = typeChoisi;
+
+            // 4. On charge le texte brut
             rawInput.value = data.rawInput;
-            items.value = data.items;
+
+            // 5. IMPORTANT : On recalcule les données (items et mapping)
+            // pour qu'elles s'adaptent au nouveau type de graphique choisi.
+            isUndoing.value = false; // On débloque temporairement parseData
+            parseData(rawInput.value);
+            isUndoing.value = true; // On rebloque pour la suite du rendu
 
             nextTick(() => {
               ChartModule.render(
@@ -268,7 +282,7 @@ const app = createApp({
           } catch (err) {
             alert("Erreur lors de la lecture du fichier.");
           } finally {
-            // LIGNE IMPORTANTE : Réinitialise l'input pour pouvoir rouvrir le même fichier plus tard
+            // Permet de rouvrir le même fichier consécutivement
             event.target.value = "";
           }
         };
