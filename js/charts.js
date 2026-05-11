@@ -189,19 +189,16 @@ const ChartModule = {
         gridG.select("path").remove();
       }
 
-      // CORRECTION: AFFICHAGE DES DONNÉES DES AXES NUMÉRIQUES
       if (isHoriz) {
-        // Horizontale : Les nombres sont sur X, les étiquettes personnalisées sur Y
         g.append("g")
           .attr("transform", `translate(0,${innerH})`)
-          .call(d3.axisBottom(xScale)); // Affiche les nombres
-        g.append("g").call(d3.axisLeft(yScale).tickFormat("")); // Masque les étiquettes par défaut
+          .call(d3.axisBottom(xScale));
+        g.append("g").call(d3.axisLeft(yScale).tickFormat(""));
       } else {
-        // Verticale/Ligne : Les étiquettes perso sont sur X, les nombres sur Y
         g.append("g")
           .attr("transform", `translate(0,${innerH})`)
-          .call(d3.axisBottom(xScale).tickFormat("")); // Masque les étiquettes par défaut
-        g.append("g").call(d3.axisLeft(yScale)); // Affiche les nombres (données manquantes corrigées)
+          .call(d3.axisBottom(xScale).tickFormat(""));
+        g.append("g").call(d3.axisLeft(yScale));
       }
 
       mapping.yKeys.forEach((key, index) => {
@@ -266,9 +263,10 @@ const ChartModule = {
           let offVal =
             sVal.offsets?.[modeKey] ||
             (isHoriz ? { x: 35, y: 0 } : { x: 0, y: defaultYOffset });
-          let offTxt = sTxt.offsets?.[modeKey] || { x: 0, y: 0 };
+          let offTxt =
+            sTxt.offsets?.[modeKey] ||
+            (isHoriz ? { x: -20, y: 0 } : { x: 0, y: 30 });
 
-          // Ajout du badge de la valeur
           if (!sVal.deleted) {
             this.addInteractiveText(
               g,
@@ -287,16 +285,15 @@ const ChartModule = {
             );
           }
 
-          // CORRECTION: PLACEMENT DES LÉGENDES DE CATÉGORIE (AXE X/Y)
           if (index === 0 && !sTxt.deleted) {
             let labelX, labelY;
 
             if (isHoriz) {
-              labelX = -20; // Décalé à gauche pour les graphes horizontaux
+              labelX = -20;
               labelY = yScale(xLabels[i]) + yScale.bandwidth() / 2;
             } else {
-              labelX = xScale(xLabels[i]) + xScale.bandwidth() / 2; // Aligné sous la valeur X correspondante
-              labelY = innerH + 30; // 30 pixels sous la ligne de l'axe X
+              labelX = xScale(xLabels[i]) + xScale.bandwidth() / 2;
+              labelY = innerH + 30;
             }
 
             const grp = this.addInteractiveText(
@@ -369,30 +366,33 @@ const ChartModule = {
     mapping.yKeys.forEach((key, index) => {
       const item = leg
         .append("g")
-        .attr("transform", `translate(0, ${index * 35})`);
+        .attr("transform", `translate(0, ${index * 24})`);
+
       const color = this.colors[index % this.colors.length];
       const idLeg = `leg-${index}`,
         s = this.persistentStyles[idLeg] || {},
         off = s.offsets?.universal || { x: 0, y: 0 };
+
       item
         .append("rect")
         .attr("width", 15)
         .attr("height", 15)
         .attr("fill", color)
         .attr("y", -7.5);
+
       this.addInteractiveText(
         item,
-        25 + off.x,
+        20 + off.x, // <-- Modifié : 20 au lieu de 25 pour le rapprocher
         0 + off.y,
         s.text || key,
-        "text-sm font-bold",
+        "text-sm italic font-light", // <-- Modifié : italic et font-light par défaut
         false,
         drag,
         "#000",
         "transparent",
         index,
         idLeg,
-        25,
+        20, // <-- Modifié l'origine X correspondante
         0,
       );
     });
@@ -421,20 +421,26 @@ const ChartModule = {
       .attr("data-origin-x", ox)
       .attr("data-origin-y", oy)
       .attr("transform", `translate(${x},${y})`);
+
     if (drag) group.call(drag).style("cursor", "move");
+
     group
       .append("rect")
       .attr("rx", 4)
       .attr("ry", 4)
       .attr("fill", bgColor || "transparent");
+
     group
       .append("text")
       .attr("text-anchor", centered ? "middle" : "start")
+      .attr("dominant-baseline", "central")
       .attr("alignment-baseline", "central")
       .attr("class", classes)
       .style("font-size", "14px")
       .text(text);
+
     this.updateCartouche(group);
+
     group
       .on("click", (e) => {
         e.stopPropagation();
@@ -444,13 +450,14 @@ const ChartModule = {
         e.stopPropagation();
         this.makeInlineEditable(group.select("text"), group);
       });
+
     return group;
   },
 
   updateCartouche(group) {
     const text = group.select("text"),
       rect = group.select("rect");
-    text.attr("dy", "0.35em");
+
     const bbox = text.node().getBBox(),
       p = 5;
     rect
