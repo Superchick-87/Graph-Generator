@@ -180,6 +180,7 @@ const app = createApp({
       applyToSerie,
       history,
       fileInput,
+      saveState, // <--- AJOUTEZ CETTE LIGNE ICI
       headers: computed(() =>
         items.value.length ? Object.keys(items.value[0]) : [],
       ),

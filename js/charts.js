@@ -20,6 +20,54 @@ const ChartModule = {
     return (r * 299 + g * 587 + b * 114) / 1000 >= 128 ? "#000000" : "#FFFFFF";
   },
 
+  // NOUVEAU : Fonction qui ajuste automatiquement la hauteur du graphique (le fond blanc)
+  adjustViewBox(svg) {
+    if (!svg || svg.empty()) return;
+    try {
+      const bbox = svg.node().getBBox();
+      // On calcule si les éléments descendent plus bas que 500px,
+      // et on ajoute 30px de marge respiratoire à la fin.
+      const newHeight = Math.max(500, bbox.y + bbox.height + 30);
+      svg.attr("viewBox", `0 0 800 ${newHeight}`);
+    } catch (e) {
+      // Sécurité au cas où getBBox échoue (ex: SVG masqué)
+    }
+  },
+
+  wrapSvgText(textNode, width) {
+    textNode.each(function () {
+      const text = d3.select(this);
+      const words = text.text().split(/\s+/).reverse();
+      let word;
+      let line = [];
+      let lineNumber = 0;
+      const lineHeight = 1.2;
+      let tspan = text
+        .text(null)
+        .append("tspan")
+        .attr("x", 0)
+        .attr("y", 0)
+        .attr("dy", "0em");
+
+      while ((word = words.pop())) {
+        line.push(word);
+        tspan.text(line.join(" "));
+        if (tspan.node().getComputedTextLength() > width && line.length > 1) {
+          line.pop();
+          tspan.text(line.join(" "));
+          line = [word];
+          lineNumber++;
+          tspan = text
+            .append("tspan")
+            .attr("x", 0)
+            .attr("y", 0)
+            .attr("dy", lineNumber * lineHeight + "em")
+            .text(word);
+        }
+      }
+    });
+  },
+
   render(containerId, data, mapping, config) {
     const container = d3.select(containerId);
     if (!data.length || !mapping.yKeys.length) {
@@ -44,7 +92,7 @@ const ChartModule = {
 
     const width = 800,
       height = 500;
-    const margin = { top: 70, right: 60, bottom: 80, left: 160 };
+    const margin = { top: 70, right: 60, bottom: 80, left: 60 }; // Marge gauche réduite
     const innerW = width - margin.left - margin.right,
       innerH = height - margin.top - margin.bottom;
     const g = svg
@@ -68,6 +116,9 @@ const ChartModule = {
           oy = +node.attr("data-origin-y");
         node.attr("transform", `translate(${event.x},${event.y})`);
         this.storeStyle(id, "offset", { x: event.x - ox, y: event.y - oy });
+
+        // On agrandit la zone en temps réel pendant le glisser-déposer
+        this.adjustViewBox(svg);
       })
       .on("end", () => {
         if (window.appInstance) window.appInstance.saveState();
@@ -192,13 +243,14 @@ const ChartModule = {
       if (isHoriz) {
         g.append("g")
           .attr("transform", `translate(0,${innerH})`)
-          .call(d3.axisBottom(xScale));
+          .call(d3.axisBottom(xScale))
+          .style("font-size", "14px");
         g.append("g").call(d3.axisLeft(yScale).tickFormat(""));
       } else {
         g.append("g")
           .attr("transform", `translate(0,${innerH})`)
           .call(d3.axisBottom(xScale).tickFormat(""));
-        g.append("g").call(d3.axisLeft(yScale));
+        g.append("g").call(d3.axisLeft(yScale)).style("font-size", "14px");
       }
 
       mapping.yKeys.forEach((key, index) => {
@@ -287,12 +339,10 @@ const ChartModule = {
             let labelX, labelY;
 
             if (isHoriz) {
-              // Rapproché à gauche : -10px au lieu de -20px
               labelX = -10;
               labelY = yScale(xLabels[i]) + yScale.bandwidth() / 2;
             } else {
               labelX = xScale(xLabels[i]) + xScale.bandwidth() / 2;
-              // Rapproché en bas : +15px au lieu de +30px
               labelY = innerH + 15;
             }
 
@@ -301,7 +351,7 @@ const ChartModule = {
               labelX + offTxt.x,
               labelY + offTxt.y,
               sTxt.text || xLabels[i],
-              "text-[12px] font-bold uppercase",
+              "text-[12px]",
               !isHoriz,
               drag,
               "#000",
@@ -335,8 +385,44 @@ const ChartModule = {
       400,
       30,
     );
+
+    const sourceText = config.source ? `Source : ${config.source}` : "";
+    const sStyle = this.persistentStyles["main-source"] || {},
+      sOff = sStyle.offsets?.universal || { x: 0, y: 0 };
+
+    const rawSourceText = sStyle.text !== undefined ? sStyle.text : sourceText;
+
+    if (!sStyle.deleted && rawSourceText) {
+      const srcY = height - 35;
+      const srcGrp = this.addInteractiveText(
+        svg,
+        margin.left + sOff.x,
+        srcY + sOff.y,
+        rawSourceText,
+        "italic font-light",
+        false,
+        drag,
+        "#6b7280",
+        "transparent",
+        "source",
+        "main-source",
+        margin.left,
+        srcY,
+      );
+
+      if (!sStyle.fontSize) {
+        srcGrp.select("text").style("font-size", "11px");
+      }
+
+      this.wrapSvgText(srcGrp.select("text"), innerW);
+      this.updateCartouche(srcGrp);
+    }
+
     this.renderLegend(svg, width, margin, mapping, drag, config);
     this.applyAllStyles();
+
+    // On ajuste le fond de l'image automatiquement une fois le rendu terminé
+    this.adjustViewBox(svg);
   },
 
   renderLegend(svg, width, margin, mapping, drag, config) {
@@ -360,6 +446,8 @@ const ChartModule = {
             "transform",
             `translate(${event.x},${event.y})`,
           );
+          // On ajuste le fond en glissant la légende vers le bas
+          this.adjustViewBox(svg);
         }),
       );
 
@@ -420,6 +508,8 @@ const ChartModule = {
       .attr("data-id", uniqueId)
       .attr("data-origin-x", ox)
       .attr("data-origin-y", oy)
+      .attr("data-text-color", textColor || "#000")
+      .attr("data-raw-text", text)
       .attr("transform", `translate(${x},${y})`);
 
     if (drag) group.call(drag).style("cursor", "move");
@@ -465,8 +555,15 @@ const ChartModule = {
       .attr("y", bbox.y - p)
       .attr("width", bbox.width + p * 2)
       .attr("height", bbox.height + p * 2);
+
     const f = rect.attr("fill");
-    text.attr("fill", f === "transparent" ? "#000" : this.getContrastColor(f));
+
+    text.attr(
+      "fill",
+      f === "transparent" || f === "none"
+        ? group.attr("data-text-color") || "#000"
+        : this.getContrastColor(f),
+    );
   },
 
   storeStyle(id, prop, val) {
@@ -476,7 +573,10 @@ const ChartModule = {
         this.persistentStyles[id].offsets = {};
       const type = window.appInstance.config.type;
       const key =
-        id === "main-title" || id.startsWith("leg") || id.startsWith("axis")
+        id === "main-title" ||
+        id.startsWith("leg") ||
+        id.startsWith("axis") ||
+        id === "main-source"
           ? "universal"
           : type === "horizontalBar"
             ? "hBar"
@@ -514,7 +614,15 @@ const ChartModule = {
       if (s.fontSize) txt.style("font-size", s.fontSize);
       if (s.fontWeight) txt.style("font-weight", s.fontWeight);
       if (s.fontStyle) txt.style("font-style", s.fontStyle);
-      if (s.text) txt.text(s.text);
+
+      if (s.text) {
+        g.attr("data-raw-text", s.text);
+        txt.text(s.text);
+        if (id === "main-source") {
+          this.wrapSvgText(txt, 580);
+        }
+      }
+
       this.updateCartouche(g);
     });
   },
@@ -525,19 +633,35 @@ const ChartModule = {
       matrix = el.getScreenCTM();
     d3Text.style("visibility", "hidden");
     const input = document.createElement("input");
-    input.value = d3Text.text();
+
+    input.value = group.attr("data-raw-text") || d3Text.text();
     input.style.position = "absolute";
     input.style.left = matrix.e + window.scrollX + "px";
     input.style.top = matrix.f + window.scrollY - bbox.height / 2 + "px";
+    input.style.width = Math.max(200, bbox.width) + "px";
+
     document.body.appendChild(input);
     input.focus();
+
     const save = () => {
-      d3Text.text(input.value).style("visibility", "visible");
-      this.storeStyle(group.attr("data-id"), "text", input.value);
+      const val = input.value;
+      group.attr("data-raw-text", val);
+      d3Text.text(val).style("visibility", "visible");
+
+      if (group.attr("data-id") === "main-source") {
+        this.wrapSvgText(d3Text, 580);
+      }
+
+      this.storeStyle(group.attr("data-id"), "text", val);
       this.updateCartouche(group);
+
+      // On s'assure que le fond réagit s'il y a plus (ou moins) de texte
+      this.adjustViewBox(d3.select("#chart-container svg"));
+
       if (input.parentNode) input.parentNode.removeChild(input);
       if (window.appInstance) window.appInstance.saveState();
     };
+
     input.onkeydown = (e) => {
       if (e.key === "Enter") save();
     };
@@ -550,17 +674,14 @@ const ChartModule = {
       let targetColor = c;
       const id = g.attr("data-id");
 
-      // Si on clique sur le bouton "Transparent" (🚫)
       if (c === "transparent" || c === "none") {
         const currentFill = r.attr("fill");
         const currentStroke = r.attr("stroke");
 
-        // Si l'élément est DÉJÀ transparent (fond et contour), on le remet à son état initial
         if (
           (currentFill === "transparent" || currentFill === "none") &&
           (currentStroke === "transparent" || currentStroke === "none")
         ) {
-          // L'état initial d'une bulle de valeur (commence par "p-") est sa couleur de série
           if (id && id.startsWith("p-")) {
             const serieId = g.attr("data-serie");
             const idx = parseInt(serieId);
@@ -568,16 +689,12 @@ const ChartModule = {
               targetColor = this.colors[idx % this.colors.length];
             }
           } else {
-            // L'état initial d'une légende, d'un axe ou d'un titre est transparent
             targetColor = "transparent";
           }
         }
-
-        // On supprime les éventuels contours pour revenir à un état parfaitement propre
         r.attr("stroke", "none").attr("stroke-width", "0");
         this.storeStyle(id, "stroke", "none");
       } else {
-        // Si on choisit une vraie couleur (ex: bleu), on enlève le contour pour un rendu net
         r.attr("stroke", "none").attr("stroke-width", "0");
         this.storeStyle(id, "stroke", "none");
       }
@@ -588,8 +705,10 @@ const ChartModule = {
     };
 
     all ? this.applyToSerie(fn) : this.selectedText && fn(this.selectedText);
+    this.adjustViewBox(d3.select("#chart-container svg"));
     if (window.appInstance) window.appInstance.saveState();
   },
+
   setFontSize(s, all) {
     const fn = (g) => {
       g.select("text").style("font-size", s + "px");
@@ -597,8 +716,10 @@ const ChartModule = {
       this.updateCartouche(g);
     };
     all ? this.applyToSerie(fn) : this.selectedText && fn(this.selectedText);
+    this.adjustViewBox(d3.select("#chart-container svg"));
     if (window.appInstance) window.appInstance.saveState();
   },
+
   toggleBold(all) {
     const fn = (g) => {
       const t = g.select("text"),
@@ -609,8 +730,10 @@ const ChartModule = {
       this.updateCartouche(g);
     };
     all ? this.applyToSerie(fn) : this.selectedText && fn(this.selectedText);
+    this.adjustViewBox(d3.select("#chart-container svg"));
     if (window.appInstance) window.appInstance.saveState();
   },
+
   toggleItalic(all) {
     const fn = (g) => {
       const t = g.select("text"),
@@ -620,8 +743,10 @@ const ChartModule = {
       this.updateCartouche(g);
     };
     all ? this.applyToSerie(fn) : this.selectedText && fn(this.selectedText);
+    this.adjustViewBox(d3.select("#chart-container svg"));
     if (window.appInstance) window.appInstance.saveState();
   },
+
   toggleOutline(all) {
     const fn = (g) => {
       const r = g.select("rect"),
@@ -629,26 +754,27 @@ const ChartModule = {
         s = r.attr("stroke");
 
       if (f && f !== "transparent" && f !== "none") {
-        // 1. S'il a un fond coloré -> Il devient un contour de la même couleur
         r.attr("stroke", f)
           .attr("fill", "transparent")
           .attr("stroke-width", "1.5px");
         this.storeStyle(g.attr("data-id"), "stroke", f);
         this.storeStyle(g.attr("data-id"), "fill", "transparent");
       } else if (s && s !== "transparent" && s !== "none") {
-        // 2. S'il a déjà un contour coloré -> Il redevient un fond solide
         r.attr("fill", s)
           .attr("stroke", "transparent")
           .attr("stroke-width", "0");
         this.storeStyle(g.attr("data-id"), "fill", s);
         this.storeStyle(g.attr("data-id"), "stroke", "transparent");
       } else {
-        // 3. S'il est 100% transparent (comme la légende) -> On ajoute un contour !
         let newColor = "#333333";
         const serieId = g.attr("data-serie");
 
-        // Petite magie : on récupère la couleur de la courbe correspondante
-        if (serieId && serieId !== "title" && serieId !== "axis") {
+        if (
+          serieId &&
+          serieId !== "title" &&
+          serieId !== "axis" &&
+          serieId !== "source"
+        ) {
           const idx = parseInt(serieId);
           if (!isNaN(idx)) newColor = this.colors[idx % this.colors.length];
         }
@@ -664,42 +790,43 @@ const ChartModule = {
     };
 
     all ? this.applyToSerie(fn) : this.selectedText && fn(this.selectedText);
+    this.adjustViewBox(d3.select("#chart-container svg"));
     if (window.appInstance) window.appInstance.saveState();
   },
+
   deleteText() {
     if (this.selectedText) {
       const id = this.selectedText.attr("data-id");
       this.storeStyle(id, "deleted", true);
       this.selectedText.remove();
       this.deselectText();
+      this.adjustViewBox(d3.select("#chart-container svg"));
       if (window.appInstance) window.appInstance.saveState();
     }
   },
+
   selectText(g) {
     this.deselectText();
     this.selectedText = g;
     g.select("rect").style("outline", "2px solid #0069b4");
     if (window.appInstance) window.appInstance.onTextSelected(true);
   },
+
   deselectText() {
     if (this.selectedText)
       this.selectedText.select("rect").style("outline", "none");
     this.selectedText = null;
     if (window.appInstance) window.appInstance.onTextSelected(false);
   },
+
   applyToSerie(cb) {
     if (!this.selectedText) return;
 
     const sId = this.selectedText.attr("data-serie");
-
-    // On isole le début de l'ID pour savoir si on a cliqué sur un point ("p-...") ou une légende ("leg-...")
     const selectedPrefix = this.selectedText.attr("data-id").split("-")[0];
 
     d3.selectAll(`.editable-group[data-serie='${sId}']`).each(function () {
       const g = d3.select(this);
-
-      // On n'applique la modification QUE si c'est le même type d'élément
-      // (ex: si on a cliqué sur une bulle, on ne modifie que les bulles, on ignore la légende)
       if (g.attr("data-id").startsWith(selectedPrefix)) {
         cb(g);
       }
