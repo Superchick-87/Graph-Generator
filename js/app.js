@@ -5,12 +5,20 @@ const app = createApp({
     const rawInput = ref("");
     const items = ref([]);
     const mapping = ref({ x: "", yKeys: [] });
+
+    // NOUVEAU : Formats
+    const formats = [
+      { id: "1x2", label: "1 col x 2 modules", mmW: 48.9, mmH: 75.1 },
+      { id: "2x2", label: "2 cols x 2 modules", mmW: 101.8, mmH: 75.1 },
+    ];
+
     const config = ref({
       title: "",
       source: "",
       type: "line",
       showPieLegend: false,
       showGrid: false,
+      formatId: "2x2", // Format par défaut
     });
     const isTextSelected = ref(false);
     const applyToSerie = ref(false);
@@ -77,7 +85,6 @@ const app = createApp({
       history.value.pop();
       const prevState = JSON.parse(history.value[history.value.length - 1]);
 
-      // Restauration profonde
       ChartModule.persistentStyles = JSON.parse(
         JSON.stringify(prevState.styles),
       );
@@ -101,10 +108,7 @@ const app = createApp({
     };
 
     const parseData = (val) => {
-      // Si on est en train de charger un projet ou d'annuler, on bloque l'analyse sans vider les données
       if (isUndoing.value) return;
-
-      // Si le champ est vide, on vide le tableau
       if (!val || !val.trim()) {
         items.value = [];
         return;
@@ -174,13 +178,14 @@ const app = createApp({
       mapping,
       config,
       types,
+      formats, // Exposé à la vue
       currentTypeHint,
       currentPlaceholder,
       isTextSelected,
       applyToSerie,
       history,
       fileInput,
-      saveState, // <--- AJOUTEZ CETTE LIGNE ICI
+      saveState,
       headers: computed(() =>
         items.value.length ? Object.keys(items.value[0]) : [],
       ),
@@ -210,6 +215,19 @@ const app = createApp({
           saveState();
         },
         undo: () => undo(),
+        exportPDF: () => {
+          const svg = document.querySelector("#chart-container svg");
+          if (svg) {
+            if (typeof ExportModule !== "undefined") {
+              // On passe toute la config pour qu'exporter.js lise le format choisi
+              ExportModule.exportToPDF(svg, config.value);
+            } else {
+              alert("Le module d'exportation (exporter.js) n'est pas chargé.");
+            }
+          } else {
+            alert("Aucun graphique à exporter.");
+          }
+        },
       },
       onTextSelected: (s) => {
         isTextSelected.value = s;
@@ -245,28 +263,16 @@ const app = createApp({
         reader.onload = (e) => {
           try {
             const data = JSON.parse(e.target.result);
-
-            // 1. On mémorise le type actuellement sélectionné dans le menu
             const typeChoisi = config.value.type;
-
             isUndoing.value = true;
             ChartModule.persistentStyles = data.styles || {};
             ChartModule.legendPos = data.legendPos || { x: null, y: null };
-
-            // 2. On charge la configuration du fichier
             Object.assign(config.value, data.config);
-
-            // 3. On écrase le type du fichier par le type choisi avant l'ouverture
             config.value.type = typeChoisi;
-
-            // 4. On charge le texte brut
             rawInput.value = data.rawInput;
-
-            // 5. IMPORTANT : On recalcule les données (items et mapping)
-            // pour qu'elles s'adaptent au nouveau type de graphique choisi.
-            isUndoing.value = false; // On débloque temporairement parseData
+            isUndoing.value = false;
             parseData(rawInput.value);
-            isUndoing.value = true; // On rebloque pour la suite du rendu
+            isUndoing.value = true;
 
             nextTick(() => {
               ChartModule.render(
@@ -283,7 +289,6 @@ const app = createApp({
           } catch (err) {
             alert("Erreur lors de la lecture du fichier.");
           } finally {
-            // Permet de rouvrir le même fichier consécutivement
             event.target.value = "";
           }
         };

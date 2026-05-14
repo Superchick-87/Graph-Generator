@@ -20,18 +20,14 @@ const ChartModule = {
     return (r * 299 + g * 587 + b * 114) / 1000 >= 128 ? "#000000" : "#FFFFFF";
   },
 
-  // NOUVEAU : Fonction qui ajuste automatiquement la hauteur du graphique (le fond blanc)
   adjustViewBox(svg) {
     if (!svg || svg.empty()) return;
     try {
       const bbox = svg.node().getBBox();
-      // On calcule si les éléments descendent plus bas que 500px,
-      // et on ajoute 30px de marge respiratoire à la fin.
-      const newHeight = Math.max(500, bbox.y + bbox.height + 30);
+      const baseH = parseFloat(svg.attr("data-base-height")) || 500;
+      const newHeight = Math.max(baseH, bbox.y + bbox.height + 30);
       svg.attr("viewBox", `0 0 800 ${newHeight}`);
-    } catch (e) {
-      // Sécurité au cas où getBBox échoue (ex: SVG masqué)
-    }
+    } catch (e) {}
   },
 
   wrapSvgText(textNode, width) {
@@ -79,20 +75,39 @@ const ChartModule = {
     if (svg.empty()) {
       svg = container
         .append("svg")
-        .attr("viewBox", `0 0 800 500`)
         .attr("preserveAspectRatio", "xMidYMid meet")
         .style("width", "100%")
         .style("height", "auto")
         .style("background", "transparent")
+        .style("font-family", "'Roboto', sans-serif")
         .on("click", (e) => {
           if (e.target.tagName === "svg") this.deselectText();
         });
     }
+
+    // CALCUL DU FORMAT ET DU RATIO
+    const formats = {
+      "1x2": { w: 48.9, h: 75.1 },
+      "2x2": { w: 101.8, h: 75.1 },
+    };
+    const activeFmt = formats[config.formatId] || formats["2x2"];
+
+    const width = 800;
+    const height = width * (activeFmt.h / activeFmt.w);
+
+    svg.attr("viewBox", `0 0 ${width} ${height}`);
+    svg.attr("data-base-height", height); // Stocke la hauteur théorique
     svg.selectAll("*").remove();
 
-    const width = 800,
-      height = 500;
-    const margin = { top: 70, right: 60, bottom: 80, left: 60 }; // Marge gauche réduite
+    // ADAPTATION DES MARGES SI LE FORMAT EST ÉTROIT
+    const isNarrow = activeFmt.w < 60;
+    const margin = {
+      top: 70,
+      right: isNarrow ? 20 : 60,
+      bottom: 80,
+      left: isNarrow ? 45 : 60,
+    };
+
     const innerW = width - margin.left - margin.right,
       innerH = height - margin.top - margin.bottom;
     const g = svg
@@ -116,8 +131,6 @@ const ChartModule = {
           oy = +node.attr("data-origin-y");
         node.attr("transform", `translate(${event.x},${event.y})`);
         this.storeStyle(id, "offset", { x: event.x - ox, y: event.y - oy });
-
-        // On agrandit la zone en temps réel pendant le glisser-déposer
         this.adjustViewBox(svg);
       })
       .on("end", () => {
@@ -393,7 +406,7 @@ const ChartModule = {
     const rawSourceText = sStyle.text !== undefined ? sStyle.text : sourceText;
 
     if (!sStyle.deleted && rawSourceText) {
-      const srcY = height - 35;
+      const srcY = height - 35; // Position relative à la nouvelle base
       const srcGrp = this.addInteractiveText(
         svg,
         margin.left + sOff.x,
@@ -421,7 +434,6 @@ const ChartModule = {
     this.renderLegend(svg, width, margin, mapping, drag, config);
     this.applyAllStyles();
 
-    // On ajuste le fond de l'image automatiquement une fois le rendu terminé
     this.adjustViewBox(svg);
   },
 
@@ -446,7 +458,6 @@ const ChartModule = {
             "transform",
             `translate(${event.x},${event.y})`,
           );
-          // On ajuste le fond en glissant la légende vers le bas
           this.adjustViewBox(svg);
         }),
       );
@@ -655,7 +666,6 @@ const ChartModule = {
       this.storeStyle(group.attr("data-id"), "text", val);
       this.updateCartouche(group);
 
-      // On s'assure que le fond réagit s'il y a plus (ou moins) de texte
       this.adjustViewBox(d3.select("#chart-container svg"));
 
       if (input.parentNode) input.parentNode.removeChild(input);

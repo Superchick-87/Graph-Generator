@@ -6,8 +6,17 @@
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/svg2pdf.js@2.2.1/dist/svg2pdf.umd.min.js"></script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,300;0,400;0,700;1,300;1,400&display=swap"
+      rel="stylesheet"
+    />
+
     <style>
       .roboto {
         font-family: "Roboto", sans-serif;
@@ -22,7 +31,7 @@
       }
     </style>
   </head>
-  <body class="bg-slate-50">
+  <body class="bg-slate-50" style="font-family: &quot;Roboto&quot;, sans-serif">
     <div id="app" class="p-6 max-w-7xl mx-auto">
       <header class="mb-8 border-b pb-4 flex justify-between items-center">
         <h1 class="text-2xl font-bold text-slate-800">Graph Generator</h1>
@@ -139,6 +148,20 @@
           </section>
 
           <section
+            class="bg-white p-4 rounded-lg shadow-sm border border-slate-200 space-y-4"
+          >
+            <h2 class="font-semibold text-blue-700">4. Format d'export</h2>
+            <select
+              v-model="config.formatId"
+              class="w-full border p-2 rounded text-sm bg-slate-50 font-bold"
+            >
+              <option v-for="f in formats" :key="f.id" :value="f.id">
+                {{ f.label }} ({{ f.mmW }}x{{ f.mmH }}mm)
+              </option>
+            </select>
+          </section>
+
+          <section
             class="bg-white p-4 rounded-lg shadow-sm border border-slate-200"
           >
             <h2 class="font-semibold mb-3 italic text-slate-500 text-sm">
@@ -162,6 +185,12 @@
                 class="bg-green-50 text-green-700 py-2 rounded text-xs font-bold border border-green-200 hover:bg-green-100 transition-colors"
               >
                 💾 Enregistrer
+              </button>
+              <button
+                @click="actions.exportPDF()"
+                class="col-span-2 bg-red-50 text-red-700 py-2 rounded text-xs font-bold border border-red-200 hover:bg-red-100 transition-colors mt-2"
+              >
+                📕 Exporter en PDF vectoriel
               </button>
             </div>
             <input
@@ -224,10 +253,11 @@
               class="bg-slate-700 text-white text-xs rounded px-1 py-1 outline-none border border-slate-600"
             >
               <option
-                v-for="size in [8, 10, 11, 12, 14, 16, 20, 24, 32]"
+                v-for="size in [6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 24]"
                 :value="size"
+                :selected="size === 9"
               >
-                {{size}}px
+                {{size}}pt
               </option>
             </select>
             <button
@@ -266,6 +296,7 @@
       </transition>
     </div>
     <script src="js/charts.js"></script>
+    <script src="js/exporter.js"></script>
     <script src="js/app.js"></script>
   </body>
 </html>
